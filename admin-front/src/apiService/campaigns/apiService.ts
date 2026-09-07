@@ -4,6 +4,8 @@ import createCampaignAdapter from './adapters/createCampaignAdapter';
 import deleteCampaignAdapter from './adapters/deleteCampaignAdapter';
 import generateConfigsAdapter from './adapters/generateConfigsAdapter';
 import startCampaignAdapter from './adapters/startCampaignAdapter';
+import retryFailedAdapter from './adapters/retryFailedAdapter';
+import stopCampaignAdapter from './adapters/stopCampaignAdapter';
 import campaignsItemAdapter from './adapters/campaignsItemAdapter';
 import campaignsListAdapter from './adapters/campaignsListAdapter';
 import type {
@@ -19,6 +21,10 @@ import type {
   ListCampaignsResponseWire,
   StartCampaignInput,
   StartCampaignResponseWire,
+  RetryFailedInput,
+  RetryFailedResponseWire,
+  StopCampaignInput,
+  StopCampaignResponseWire,
 } from './campaignsApiTypes';
 
 export const campaignsApiService = {
@@ -80,10 +86,41 @@ export const campaignsApiService = {
     return campaignId;
   },
 
+  retryFailed: async (input: RetryFailedInput): Promise<number> => {
+    const response = await request<RetryFailedResponseWire>(
+      'POST',
+      `/campaigns/${input.id}/retry-failed`,
+    );
+
+    const campaignId = retryFailedAdapter.adaptResponseData(response);
+
+    if (campaignId === undefined) {
+      throw new Error('Не удалось вернуть письма в очередь');
+    }
+
+    return campaignId;
+  },
+
+  stopCampaign: async (input: StopCampaignInput): Promise<number> => {
+    const response = await request<StopCampaignResponseWire>(
+      'POST',
+      `/campaigns/${input.id}/stop`,
+    );
+
+    const campaignId = stopCampaignAdapter.adaptResponseData(response);
+
+    if (campaignId === undefined) {
+      throw new Error('Не удалось остановить рассылку');
+    }
+
+    return campaignId;
+  },
+
   generateConfigs: async (input: GenerateConfigsInput): Promise<string> => {
     const response = await request<GenerateConfigsResponseWire>(
       'POST',
       `/campaigns/${input.id}/configs/generate`,
+      generateConfigsAdapter.adaptParams(input),
     );
 
     const detail = generateConfigsAdapter.adaptResponseData(response);

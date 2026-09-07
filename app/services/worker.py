@@ -77,7 +77,10 @@ class Worker:
             return
 
         for recipient in pending:
-            if self._stop.is_set():
+            # Кампанию могли остановить из HTTP-запроса, пока идёт пачка, поэтому статус
+            # перечитываем перед каждым письмом: иначе stop сработал бы только со
+            # следующего тика, то есть после рассылки всей пачки.
+            if self._stop.is_set() or not self._is_running(db, campaign.id):
                 return
             self._send_one(db, campaign, recipient)
             # Пауза между письмами; прерывается сразу при остановке воркера.
@@ -115,6 +118,12 @@ class Worker:
     @staticmethod
     def _running_campaigns(db: Session) -> list[Campaign]:
         return db.query(Campaign).filter_by(status=CampaignStatus.IN_PROGRESS).all()
+
+    @staticmethod
+    def _is_running(db: Session, campaign_id: int) -> bool:
+        """Ещё ли кампания в работе — свежим запросом, мимо кеша сессии."""
+        status = db.query(Campaign.status).filter_by(id=campaign_id).scalar()
+        return status == CampaignStatus.IN_PROGRESS
 
     @staticmethod
     def _pending_recipients(db: Session, campaign_id: int) -> list[Recipient]:

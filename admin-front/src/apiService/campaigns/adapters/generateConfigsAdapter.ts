@@ -1,10 +1,13 @@
 import type {
   GenerateConfigsInput,
+  GenerateConfigsRequestWire,
   GenerateConfigsResponseWire,
 } from '../campaignsApiTypes';
 
 const generateConfigsAdapter = {
-  adaptParams: (_input: GenerateConfigsInput) => undefined,
+  adaptParams: (input: GenerateConfigsInput): GenerateConfigsRequestWire => ({
+    servers: input.servers ?? [],
+  }),
 
   adaptResponseData: (response: GenerateConfigsResponseWire): string | undefined =>
     response.status === 'success' && response.result

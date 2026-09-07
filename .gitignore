@@ -1,4 +1,8 @@
+# Секреты и любые их варианты: у репозитория есть публичный remote, и один
+# неудачно названный файл (.env.foo, servers.backup.yml) уехал бы в коммит.
 .env
+.env.*
+!.env.example
 .venv/
 .vscode/
 __pycache__/
@@ -7,3 +11,7 @@ vibe_mail.db
 node_modules
 .agents
 attachments/**/*
+# Боевой конфиг серверов и любые его копии: внутри пароли от панелей.
+servers.yml*
+servers.*.yml
+!servers.example.yml

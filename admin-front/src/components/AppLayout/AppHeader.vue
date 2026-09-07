@@ -13,6 +13,25 @@
       <h1 :class="styles.title">
         Documents
       </h1>
+
+      <button
+        :class="styles.themeButton"
+        :title="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'"
+        :aria-label="theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'"
+        type="button"
+        data-test="theme-toggle"
+        @click="toggleTheme"
+      >
+        <Sun
+          v-if="theme === 'dark'"
+          :class="styles.themeIcon"
+        />
+
+        <Moon
+          v-else
+          :class="styles.themeIcon"
+        />
+      </button>
     </div>
   </header>
 </template>
@@ -21,11 +40,15 @@
 import type { HTMLAttributes } from 'vue';
 import { useCssModule } from 'vue';
 
+import { Moon, Sun } from '@lucide/vue';
 import { Separator } from '@/components/ui/separator';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
+import useTheme from '@/composables/useTheme';
 
 const styles = useCssModule();
+
+const { theme, toggleTheme } = useTheme();
 
 withDefaults(defineProps<{ class?: HTMLAttributes['class'] }>(), {
   class: undefined,
@@ -74,5 +97,30 @@ withDefaults(defineProps<{ class?: HTMLAttributes['class'] }>(), {
   font-size: 1rem;
   line-height: 1.5rem;
   font-weight: 500;
+}
+
+/* Прижата вправо: это переключатель, а не часть заголовка. */
+.themeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.themeButton:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.themeIcon {
+  width: 1.125rem;
+  height: 1.125rem;
 }
 </style>

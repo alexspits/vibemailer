@@ -1,9 +1,13 @@
 import { request } from '@/apiService/httpClient';
 
+import addConfigsAdapter from './adapters/addConfigsAdapter';
+import bindNewConfigsAdapter from './adapters/bindNewConfigsAdapter';
 import importRecipientsAdapter from './adapters/importRecipientsAdapter';
 import previewRecipientsImportAdapter from './adapters/previewRecipientsImportAdapter';
 import recipientsListAdapter from './adapters/recipientsListAdapter';
 import type {
+  AddConfigsInput,
+  BindNewConfigsInput,
   GetRecipientsInput,
   ImportPreview,
   ImportPreviewResponseWire,
@@ -13,6 +17,7 @@ import type {
   ListRecipientsResponseWire,
   PreviewRecipientsImportInput,
   Recipient,
+  RecipientResponseWire,
 } from './recipientsApiTypes';
 
 export const recipientsApiService = {
@@ -57,6 +62,38 @@ export const recipientsApiService = {
     }
 
     return result;
+  },
+
+  addConfigs: async (input: AddConfigsInput): Promise<Recipient> => {
+    const response = await request<RecipientResponseWire>(
+      'POST',
+      `/recipients/${input.recipientId}/configs`,
+      addConfigsAdapter.adaptParams(input),
+    );
+
+    const recipient = addConfigsAdapter.adaptResponseData(response);
+
+    if (!recipient) {
+      throw new Error('Не удалось добавить конфиги');
+    }
+
+    return recipient;
+  },
+
+  bindNewConfigs: async (input: BindNewConfigsInput): Promise<Recipient> => {
+    const response = await request<RecipientResponseWire>(
+      'POST',
+      `/recipients/${input.recipientId}/configs/bind`,
+      bindNewConfigsAdapter.adaptParams(input),
+    );
+
+    const recipient = bindNewConfigsAdapter.adaptResponseData(response);
+
+    if (!recipient) {
+      throw new Error('Не удалось привязать клиентов');
+    }
+
+    return recipient;
   },
 };
 

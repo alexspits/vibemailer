@@ -20,9 +20,15 @@ const previewRecipientsImportAdapter = {
     return {
       groups: result.groups.map((group) => ({
         email: group.email,
-        configs: group.configs,
-        existingConfigs: group.existing_configs ?? [],
+        clientName: group.client_name,
+        existingClientName: group.existing_client_name ?? null,
         isExisting: group.is_existing ?? false,
+        count: group.count ?? 1,
+        existingCount: group.existing_count ?? 0,
+        newConfigs: group.new_configs ?? 0,
+        servers: group.servers ?? [],
+        newNames: group.new_names ?? [],
+        bindings: group.bindings ?? {},
       })),
       problems: (result.problems ?? []).map((problem) => ({
         line: problem.line,
@@ -30,6 +36,7 @@ const previewRecipientsImportAdapter = {
         reason: problem.reason,
       })),
       totalRows: result.total_rows,
+      totalRecipients: result.total_recipients,
       totalConfigs: result.total_configs,
     };
   },

@@ -1,0 +1,99 @@
+# Список VPN-серверов, с которых берутся конфиги.
+#
+# Скопируйте в servers.yml (он в .gitignore) и подставьте свои доступы.
+# Путь к файлу задаётся переменной VPN_SERVERS_FILE в .env.
+#
+# key        — идентификатор сервера. Лежит в БД у каждого конфига, поэтому после
+#              создания кампаний менять его нельзя.
+# panel      — amnezia | 3x-ui | wg-easy | fake
+# transport  — ssh (панель слушает localhost, ходим curl'ом внутри SSH-сессии)
+#              либо direct (панель доступна снаружи, ходим HTTP-клиентом)
+# base_url   — адрес API панели. При transport=ssh это адрес, каким его видит сам
+#              сервер: curl запускается на нём, а не у вас. Порт здесь — тот, что
+#              панель слушает НА СЕРВЕРЕ, а не локальный порт из LocalForward в
+#              ~/.ssh/config: проброс приложению не нужен, оно ходит через SSH само.
+#              Если у панели задан webBasePath, он входит в base_url.
+#
+# verify_tls — проверять ли сертификат панели. У панели с самоподписанным
+#              сертификатом ставьте false, иначе запрос не доедет. То же самое при
+#              transport=ssh, если сертификат выписан на домен: идём-то на 127.0.0.1,
+#              и имя не совпадёт.
+#
+# Проверить доступы, ничего не меняя на серверах: make check_servers
+#
+# Блок ssh: host — это алиас из ~/.ssh/config либо обычное имя хоста. Всё, что задано
+# здесь явно, перекрывает найденное в ~/.ssh/config. Если ключ не указан ни здесь,
+# ни в ~/.ssh/config, paramiko подберёт обычные ~/.ssh/id_* и спросит ssh-agent.
+
+servers:
+  # --- WireGuard Easy v15: отдаёт файл .conf ---
+  # Basic Auth логином и паролем от веб-морды. 2FA должен быть выключен,
+  # иначе API не работает.
+  - key: ru
+    title: Россия (WireGuard Easy)
+    panel: wg-easy
+    transport: ssh
+    base_url: http://127.0.0.1:51821
+    ssh:
+      host: ru
+    auth:
+      username: admin
+      password: ""
+
+  # --- 3x-ui: отдаёт ссылку подписки ---
+  # token — из Settings → Security → API Token (Bearer, CSRF не нужен).
+  # На старых версиях панели токена нет: оставьте token пустым и заполните
+  # username/password — тогда используется вход через POST /login с cookie-сессией.
+  # inbound_ids — в какие inbound'ы заводить клиента. На старых версиях панели имя
+  # клиента уникально в пределах всей панели, а не inbound'а, поэтому там список
+  # из одного inbound'а.
+  # flow — значение Flow у новых клиентов (например xtls-rprx-vision). Пусто — берём
+# то, что уже стоит у клиентов этого inbound'а: flow диктует протокол inbound'а, а не
+# вкус, и у соседей по нему он заведомо верный. Без него клиент на VLESS+Vision
+# создаётся и конфиг отдаёт, но не подключается.
+# sub_base — база ссылки подписки, если панель за прокси и показывает свой внутренний
+  # адрес. Пусто — берём из настроек самой панели.
+  - key: ru2
+    title: Россия 2 (3x-ui)
+    panel: 3x-ui
+    transport: direct
+    base_url: https://ru2.example.com:2053
+    inbound_ids: [1]
+    # sub_base: https://ru2.example.com/subs/
+    auth:
+      token: ""
+      username: admin
+      password: ""
+
+  - key: de
+    title: Германия (3x-ui)
+    panel: 3x-ui
+    transport: direct
+    base_url: https://de.example.com:2053
+    inbound_ids: [1]
+    auth:
+      token: ""
+      username: admin
+      password: ""
+
+  # --- AmneziaWG Web UI: отдаёт файл .conf ---
+  # Панель слушает только localhost сервера, поэтому transport всегда ssh.
+  # Переименования клиентов в этой панели нет — имена здесь не трогаем.
+  - key: de2
+    title: Германия 2 (AmneziaWG)
+    panel: amnezia
+    transport: ssh
+    base_url: http://127.0.0.1:8080
+    ssh:
+      host: de2
+    auth:
+      username: vpnuser
+      password: ""
+
+  # --- Заглушка для разработки без доступа к серверам ---
+  # panel=fake ничего не знает про то, что изображает, поэтому artifact задаётся явно.
+  # - key: dev
+  #   title: Заглушка
+  #   panel: fake
+  #   transport: direct
+  #   artifact: file

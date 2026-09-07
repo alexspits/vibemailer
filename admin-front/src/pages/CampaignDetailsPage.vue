@@ -44,10 +44,26 @@
         </Button>
 
         <Button
+          v-for="server in serversList"
+          :key="server.key"
+          :disabled="isServerGenerateDisabled(server.key)"
+          variant="outline"
+          data-test="generate-server-button"
+          @click="onGenerateConfigs([server.key])"
+        >
+          <LoaderCircle
+            v-if="isServerGenerating(server.key)"
+            :class="$style.spinner"
+          />
+
+          {{ serverGenerateLabel(server) }}
+        </Button>
+
+        <Button
           :disabled="isGenerateDisabled"
           variant="outline"
           data-test="generate-configs-button"
-          @click="onGenerateConfigs"
+          @click="onGenerateConfigs()"
         >
           <LoaderCircle
             v-if="isGeneratingConfigs"
@@ -58,6 +74,38 @@
         </Button>
 
         <Button
+          v-if="failedCount > 0 && !isRunning"
+          :disabled="isRetrying"
+          :title="'Вернуть в очередь письма, которые не ушли, и не трогать отправленные'"
+          variant="outline"
+          data-test="retry-failed-button"
+          @click="onRetryFailed"
+        >
+          <LoaderCircle
+            v-if="isRetrying"
+            :class="$style.spinner"
+          />
+
+          Повторить неотправленные ({{ failedCount }})
+        </Button>
+
+        <Button
+          v-if="isRunning"
+          :disabled="isStopping"
+          variant="outline"
+          data-test="stop-button"
+          @click="onStop"
+        >
+          <LoaderCircle
+            v-if="isStopping"
+            :class="$style.spinner"
+          />
+
+          {{ stopLabel }}
+        </Button>
+
+        <Button
+          v-else
           :disabled="isButtonDisabled"
           :title="isWaitingConfigs ? 'Сначала сгенерируйте конфиги' : undefined"
           data-test="start-button"
@@ -133,6 +181,19 @@
           Готовы: {{ configTotals.ready }} из {{ configTotals.total }}
           <template v-if="configTotals.failed">
             / Ошибки: {{ configTotals.failed }}
+          </template>
+        </p>
+
+        <p
+          v-for="server in serversList"
+          :key="server.key"
+          :class="$style.serverProgress"
+          data-test="server-progress"
+        >
+          {{ server.title }}: {{ serverTotals(server.key).ready }}
+          из {{ serverTotals(server.key).total }}
+          <template v-if="serverTotals(server.key).failed">
+            / ошибки: {{ serverTotals(server.key).failed }}
           </template>
         </p>
       </div>
@@ -240,7 +301,15 @@
                   :class="$style.configRow"
                   data-test="recipient-config"
                 >
-                  <span :class="$style.configName">{{ config.name }}</span>
+                  <span :class="$style.configName">
+                    {{ config.name }} · {{ serverTitle(config.serverKey) }}
+
+                    <span
+                      v-if="config.isExternal"
+                      :class="$style.panelName"
+                      data-test="config-panel-name"
+                    >на панели: {{ config.panelName }}</span>
+                  </span>
 
                   <TooltipProvider v-if="config.error">
                     <Tooltip>
@@ -265,19 +334,69 @@
                     {{ configStatusLabel(config.status) }}
                   </Badge>
 
+                  <!--
+                    Имя файла задаёт сервер через Content-Disposition: в нём есть ключ
+                    сервера, а у привязанного вручную конфига `filename` — это имя с
+                    панели (`adonm.conf`), которое наружу показывать незачем.
+                  -->
                   <a
-                    v-if="config.status === 'ready'"
+                    v-if="config.status === 'ready' && config.kind === 'file'"
                     :href="configDownloadUrl(config.id)"
-                    :download="config.filename ?? `${config.name}.conf`"
                     :class="$style.downloadLink"
                     :title="`Скачать (${formatSize(config.size)})`"
                     data-test="config-download-link"
                   >
                     <Download :class="$style.iconBtn" />
                   </a>
+
+                  <button
+                    v-else-if="config.status === 'ready' && config.link"
+                    :class="$style.copyButton"
+                    :title="config.link"
+                    type="button"
+                    data-test="config-copy-link"
+                    @click="copyLink(config.link)"
+                  >
+                    <Copy :class="$style.iconBtn" />
+                  </button>
+
+                  <button
+                    :class="$style.copyButton"
+                    :title="config.isExternal
+                      ? `Привязан клиент ${config.externalName}`
+                      : 'Привязать клиентов с панели'"
+                    type="button"
+                    data-test="config-bind-button"
+                    @click="openBind(recipient, config)"
+                  >
+                    <Link2 :class="[$style.iconBtn, config.isExternal ? $style.iconActive : '']" />
+                  </button>
+
+                  <button
+                    :class="$style.copyButton"
+                    :disabled="isDeletingConfig"
+                    title="Удалить эту строку конфига. Клиент на панели останется."
+                    type="button"
+                    data-test="config-delete-button"
+                    @click="onDeleteConfig(config)"
+                  >
+                    <Trash2 :class="$style.iconBtn" />
+                  </button>
                 </div>
 
                 <span v-if="recipient.configs.length === 0">—</span>
+
+                <button
+                  :class="$style.addConfigButton"
+                  title="Добавить получателю ещё конфиги"
+                  type="button"
+                  data-test="recipient-add-configs"
+                  @click="openAddConfigs(recipient)"
+                >
+                  <Plus :class="$style.iconBtn" />
+
+                  Добавить конфиг
+                </button>
               </TableCell>
             </TableRow>
           </template>
@@ -290,6 +409,21 @@
       :campaign-id="campaignId"
       @added="load"
     />
+
+    <BindConfigDialog
+      v-model:open="isBindOpen"
+      :config="bindTarget"
+      :recipient="bindRecipient"
+      :recipients="recipientsList"
+      :server-title="bindTarget ? serverTitle(bindTarget.serverKey) : ''"
+      @bound="load"
+    />
+
+    <AddConfigsDialog
+      v-model:open="isAddConfigsOpen"
+      :recipient="addConfigsTarget"
+      @added="load"
+    />
   </section>
 </template>
 
@@ -297,7 +431,7 @@
 import { computed, onMounted, onUnmounted, ref, watch, useCssModule } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { ArrowLeft, Download, LoaderCircle } from '@lucide/vue';
+import { ArrowLeft, Copy, Download, Link2, LoaderCircle, Plus, Trash2 } from '@lucide/vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -317,15 +451,24 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import AddRecipientsDialog from '@/components/AddRecipientsDialog.vue';
+import AddConfigsDialog from '@/components/AddConfigsDialog.vue';
+import BindConfigDialog from '@/components/BindConfigDialog.vue';
 import { API_BASE_URL } from '@/apiService/httpClient';
+import useDeleteConfig from '@/composables/data/useDeleteConfig';
 import useGenerateConfigs from '@/composables/data/useGenerateConfigs';
 import useGetCampaign from '@/composables/data/useGetCampaign';
 import useGetRecipients from '@/composables/data/useGetRecipients';
+import useGetServers from '@/composables/data/useGetServers';
+import useRetryFailed from '@/composables/data/useRetryFailed';
 import useStartCampaign from '@/composables/data/useStartCampaign';
+import useStopCampaign from '@/composables/data/useStopCampaign';
 import useToast from '@/composables/useToast';
 import type { CampaignStatus } from '@/apiService/campaigns/campaignsApiTypes';
+import type { Server } from '@/apiService/servers/serversApiTypes';
 import type {
+  Config,
   ConfigStatus,
+  Recipient,
   RecipientStatus,
 } from '@/apiService/recipients/recipientsApiTypes';
 
@@ -363,6 +506,18 @@ const {
   onDone,
 } = useStartCampaign();
 
+const {
+  isLoading: isStopping,
+  stopCampaign,
+  onDone: onStopDone,
+} = useStopCampaign();
+
+const {
+  isLoading: isRetrying,
+  retryFailed,
+  onDone: onRetryDone,
+} = useRetryFailed();
+
 const recipientsList = computed(() => recipients.value ?? []);
 
 const progressTotals = computed(() => {
@@ -393,6 +548,61 @@ const isGeneratingConfigs = computed(
 );
 
 const {
+  servers,
+  getServers,
+} = useGetServers();
+
+// Выключенные серверы не показываем: конфиги на них не заводятся, и кнопка была бы
+// заведомо неактивной.
+const serversList = computed(() => (servers.value ?? []).filter((server) => server.enabled));
+
+const serverTitles = computed(
+  () => new Map(serversList.value.map((server) => [server.key, server.title])),
+);
+
+function serverTitle(serverKey: string): string {
+  // Сервер мог исчезнуть из конфига уже после того, как конфиг завели, —
+  // тогда показываем хотя бы ключ, а не пустую ячейку.
+  return serverTitles.value.get(serverKey) ?? serverKey;
+}
+
+function serverConfigs(serverKey: string) {
+  return configs.value.filter((config) => config.serverKey === serverKey);
+}
+
+function serverTotals(serverKey: string) {
+  const list = serverConfigs(serverKey);
+
+  return {
+    ready: list.filter((config) => config.status === 'ready').length,
+    failed: list.filter((config) => config.status === 'failed').length,
+    total: list.length,
+  };
+}
+
+function isServerGenerating(serverKey: string): boolean {
+  return serverConfigs(serverKey).some(
+    (config) => config.status === 'queued' || config.status === 'generating',
+  );
+}
+
+function isServerGenerateDisabled(serverKey: string): boolean {
+  const totals = serverTotals(serverKey);
+
+  return isServerGenerating(serverKey) || totals.total === 0 || totals.ready === totals.total;
+}
+
+function serverGenerateLabel(server: Server): string {
+  if (isServerGenerating(server.key)) {
+    return `${server.title}: генерация…`;
+  }
+
+  const totals = serverTotals(server.key);
+
+  return `${server.title} (${totals.ready}/${totals.total})`;
+}
+
+const {
   generateConfigs,
   onDone: onGenerateDone,
 } = useGenerateConfigs();
@@ -412,11 +622,58 @@ const generateLabel = computed(() => {
     return 'Конфиги готовы';
   }
 
-  return 'Сгенерировать конфиги';
+  return 'Сгенерировать все';
 });
 
-function onGenerateConfigs() {
-  generateConfigs({ id: campaignId.value });
+function onGenerateConfigs(serverKeys?: string[]) {
+  // Пустой список серверов бэкенд трактует как «все включённые».
+  generateConfigs({ id: campaignId.value, servers: serverKeys ?? [] });
+}
+
+const isBindOpen = ref(false);
+const bindTarget = ref<Config | null>(null);
+// Получателя диалог знает целиком: ему нужны и остальные конфиги на этом сервере,
+// чтобы показать, какие клиенты уже разобраны.
+const bindRecipient = ref<Recipient | null>(null);
+
+function openBind(recipient: Recipient, config: Config) {
+  bindTarget.value = config;
+  bindRecipient.value = recipient;
+  isBindOpen.value = true;
+}
+
+const {
+  isLoading: isDeletingConfig,
+  deleteConfig,
+  onDone: onDeleteConfigDone,
+} = useDeleteConfig();
+
+function onDeleteConfig(config: Config) {
+  deleteConfig({ configId: config.id });
+}
+
+onDeleteConfigDone(() => {
+  toast.success('Конфиг удалён');
+  load();
+});
+
+const isAddConfigsOpen = ref(false);
+const addConfigsTarget = ref<Recipient | null>(null);
+
+function openAddConfigs(recipient: Recipient) {
+  addConfigsTarget.value = recipient;
+  isAddConfigsOpen.value = true;
+}
+
+async function copyLink(link: string) {
+  try {
+    await navigator.clipboard.writeText(link);
+    toast.success('Ссылка скопирована');
+  } catch {
+    // Буфер обмена недоступен без https и разрешения — молчать тут нельзя,
+    // иначе нажатие выглядит как будто ничего не сделало.
+    toast.error('Не удалось скопировать ссылку');
+  }
 }
 
 onGenerateDone(() => {
@@ -442,6 +699,10 @@ const currentStatus = computed<CampaignStatus>(() => effectiveStatus.value ?? 'n
 
 const DISABLED_STATUSES: CampaignStatus[] = ['in_progress', 'done', 'done_with_errors', 'error'];
 
+// Оптимистичный флаг: между нажатием и обновлением статуса кампания ещё NEW, и без
+// него кнопка на миг предлагала бы запустить рассылку второй раз. Дальше правду
+// говорит сам статус — иначе кнопка застревала бы на «Рассылка запущена» и после
+// того, как рассылка закончилась сама.
 const isCampaignStarted = ref(false);
 
 const isAddRecipientsOpen = ref(false);
@@ -454,8 +715,33 @@ function openAddRecipients() {
 
 const isCompleted = computed(() => DISABLED_STATUSES.includes(currentStatus.value));
 
+const isRunning = computed(() => currentStatus.value === 'in_progress');
+
+const stopLabel = computed(() => (isStopping.value ? 'Останавливаем…' : 'Остановить'));
+
+const failedCount = computed(() => progressTotals.value.failed);
+
+function onRetryFailed() {
+  if (campaign.value) {
+    retryFailed({ id: campaign.value.id });
+  }
+}
+
+onRetryDone(() => {
+  toast.success('Письма с ошибкой вернули в очередь — запустите рассылку снова');
+  load();
+});
+
+// Статус ушёл из NEW — значит, кампанию уже видно по-настоящему, и локальный флаг
+// больше не нужен: и когда рассылка пошла, и когда она завершилась сама.
+watch(currentStatus, (status) => {
+  if (status !== 'new') {
+    isCampaignStarted.value = false;
+  }
+});
+
 const isButtonLoading = computed(
-  () => isCampaignStarted.value || currentStatus.value === 'in_progress',
+  () => isRunning.value || (isCampaignStarted.value && currentStatus.value === 'new'),
 );
 
 // Конфиги уезжают вложениями, поэтому без файлов рассылку не запускаем — бэкенд
@@ -465,7 +751,7 @@ const isWaitingConfigs = computed(
 );
 
 const isButtonDisabled = computed(
-  () => isCampaignStarted.value || isCompleted.value || isWaitingConfigs.value,
+  () => isButtonLoading.value || isCompleted.value || isWaitingConfigs.value,
 );
 
 const buttonLabel = computed(() => {
@@ -544,6 +830,24 @@ onDone(() => {
   load();
 });
 
+function onStop() {
+  if (!campaign.value) {
+    return;
+  }
+
+  stopCampaign({ id: campaign.value.id });
+}
+
+onStopDone(() => {
+  toast.success('Рассылка остановлена');
+
+  // Кампания вернулась в NEW, поэтому снимаем локальный флаг: иначе кнопка запуска
+  // осталась бы заблокированной до перезагрузки страницы.
+  isCampaignStarted.value = false;
+
+  load();
+});
+
 const isPollingNeeded = computed(
   () => effectiveStatus.value === 'in_progress' || isGeneratingConfigs.value,
 );
@@ -568,7 +872,10 @@ watch(
   { immediate: true },
 );
 
-onMounted(load);
+onMounted(() => {
+  getServers();
+  load();
+});
 onUnmounted(stopPolling);
 
 function goBack() {
@@ -670,12 +977,17 @@ function formatDate(value: string): string {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  /* Кнопок генерации столько же, сколько серверов, поэтому в одну строку они не
+     помещаются — переносим, иначе страница едет горизонтально. */
+  flex-wrap: wrap;
 }
 
 .titleGroup {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  /* Заголовок не должен ужиматься в узкую колонку из-за ряда кнопок рядом. */
+  min-width: 0;
 }
 
 .title {
@@ -689,6 +1001,8 @@ function formatDate(value: string): string {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .skTitle {
@@ -828,6 +1142,23 @@ function formatDate(value: string): string {
   width: 8rem;
 }
 
+.addConfigButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  padding: 0.125rem 0;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.addConfigButton:hover {
+  color: var(--foreground);
+}
+
 .configRow {
   display: flex;
   align-items: center;
@@ -847,6 +1178,34 @@ function formatDate(value: string): string {
 
 .downloadLink:hover {
   color: var(--foreground);
+}
+
+.copyButton {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  color: var(--foreground);
+}
+
+.iconActive {
+  color: var(--foreground);
+}
+
+.serverProgress {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.panelName {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
 }
 
 .configPending {

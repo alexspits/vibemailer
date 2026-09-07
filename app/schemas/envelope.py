@@ -17,7 +17,8 @@ from pydantic import BaseModel
 
 from app.schemas.campaign import CampaignRead, MessageOut
 from app.schemas.import_recipients import ImportPreview, ImportResult
-from app.schemas.recipient import RecipientRead
+from app.schemas.recipient import ConfigRead, RecipientRead
+from app.schemas.server import ServerRead
 
 
 class ApiEnvelope[T](BaseModel):
@@ -59,3 +60,15 @@ class ImportPreviewEnvelope(ApiEnvelope[ImportPreview]):
 
 class ImportResultEnvelope(ApiEnvelope[ImportResult]):
     """Обёртка результата импорта получателей."""
+
+
+class ListServerReadEnvelope(ApiEnvelope[list[ServerRead]]):
+    """Обёртка списка настроенных VPN-серверов."""
+
+
+class ListPanelClientsEnvelope(ApiEnvelope[list[str]]):
+    """Обёртка списка имён клиентов, живущих на панели сервера."""
+
+
+class ConfigReadEnvelope(ApiEnvelope[ConfigRead]):
+    """Обёртка одного конфига (привязка к клиенту панели)."""

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import EMAIL_RE
 from app.db.models import Campaign, Config, Recipient, RecipientStatus
 from app.schemas.recipient import RecipientCreate
+from app.services import server_service as srv
 
 
 def validate_email(email: str) -> bool:
@@ -20,15 +21,26 @@ def _normalize_email(raw: str) -> str:
     return raw.strip().lower()
 
 
+def build_configs(seq_numbers: range | list[int]) -> list[Config]:
+    """Пустые конфиги: каждый порядковый номер на каждом включённом сервере."""
+    return [
+        Config(seq=seq, server_key=server.key, kind=server.artifact_kind)
+        for seq in seq_numbers
+        for server in srv.enabled_servers()
+    ]
+
+
 def _build_recipient(campaign_id: int, item: RecipientCreate, email: str) -> Recipient:
     """Собирает получателя вместе с его (пока пустыми) конфигами."""
     recipient = Recipient(
         campaign_id=campaign_id,
         email=email,
         name=item.name,
+        client_name=item.client_name,
+        config_count=item.count,
         status=RecipientStatus.PENDING,
     )
-    recipient.configs = [Config(name=name) for name in item.configs]
+    recipient.configs = build_configs(range(1, item.count + 1))
     return recipient
 
 
@@ -48,6 +60,9 @@ def _validate_items(
 
         if not email or not validate_email(email):
             problems.append(f"recipients[{idx}]: некорректный адрес {email!r}")
+            continue
+        if not item.client_name.strip():
+            problems.append(f"recipients[{idx}]: не указано имя конфига")
             continue
         if email in seen:
             problems.append(f"recipients[{idx}]: дубликат адреса {email}")
@@ -88,6 +103,37 @@ def add_recipients(db: Session, campaign_id: int, items: list[RecipientCreate]) 
     return to_create
 
 
+def add_configs(
+    db: Session, recipient_id: int, server_keys: list[str] | None, count: int
+) -> Recipient:
+    """Дозаводит получателю ещё `count` конфигов на каждом из указанных серверов.
+
+    Номера продолжаются отдельно по каждому серверу: у человека может быть пять
+    доступов на одном сервере и один на остальных — на панелях это разные клиенты, и
+    сквозная нумерация заставила бы заводить лишних просто ради ровного счёта.
+
+    `config_count` держим равным самому длинному ряду: импорт умеет только добавлять и
+    берёт большее из заказанного и существующего, так что занизить его — значит на
+    следующем импорте молча получить дубли.
+    """
+    recipient = get_recipient(db, recipient_id)
+    keys = srv.resolve_keys(server_keys)
+    servers = {server.key: server for server in srv.enabled_servers()}
+
+    for key in keys:
+        last = max((c.seq for c in recipient.configs if c.server_key == key), default=0)
+        recipient.configs.extend(
+            Config(seq=seq, server_key=key, kind=servers[key].artifact_kind)
+            for seq in range(last + 1, last + 1 + count)
+        )
+
+    recipient.config_count = max(config.seq for config in recipient.configs)
+    db.commit()
+    db.refresh(recipient)
+
+    return recipient
+
+
 def get_recipients(
     db: Session, campaign_id: int, status: RecipientStatus | None = None
 ) -> list[Recipient]:
@@ -107,25 +153,51 @@ def get_recipient(db: Session, recipient_id: int) -> Recipient:
 def _recipient_problems(recipient: Recipient) -> list[str]:
     """Что мешает отправить письмо конкретному получателю."""
     if not recipient.configs:
-        return [f"{recipient.email}: не указано ни одного конфига"]
+        return [f"{recipient.email}: не заведено ни одного конфига"]
 
     return [
-        f"{recipient.email}: конфиг {config.name} ещё не сгенерирован"
+        f"{recipient.email}: конфиг {config.name} на сервере {config.server_key} "
+        "ещё не сгенерирован"
         for config in recipient.configs
-        if config.content is None
+        if not config.is_ready
     ]
+
+
+def reset_failed(db: Session, campaign_id: int) -> int:
+    """Возвращает упавших получателей в очередь. Возвращает их количество.
+
+    Воркер берёт только PENDING, поэтому упавшее письмо само уже не повторится: после
+    завершения кампании такой человек остаётся без конфигов навсегда. А причины падений
+    почти всегда временные — почта отвергла пачку, оборвалась сеть, — и повторить их
+    нужно уметь, не трогая тех, кому письмо уже ушло.
+    """
+    failed = (
+        db.query(Recipient).filter_by(campaign_id=campaign_id, status=RecipientStatus.FAILED).all()
+    )
+
+    for recipient in failed:
+        recipient.status = RecipientStatus.PENDING
+        recipient.error = None
+
+    db.commit()
+
+    return len(failed)
 
 
 def validate_campaign_ready(db: Session, campaign: Campaign) -> list[str]:
     """Проверяет, готова ли кампания к отправке.
 
-    Конфиги уезжают вложениями, поэтому письмо без файла отправлять нельзя: пока хоть
-    один конфиг не сгенерирован, старт запрещён. Возвращает список проблем; пустой
-    список = можно отправлять.
+    Получатель должен получить полный набор: файлы уезжают вложениями, ссылки подписки
+    текстом в теле, и половинчатое письмо уже не переотправить. Поэтому пока хоть один
+    конфиг на любом из серверов не сгенерирован, старт запрещён. Возвращает список
+    проблем; пустой список = можно отправлять.
     """
     recipients = db.query(Recipient).filter_by(campaign_id=campaign.id).all()
 
     problems: list[str] = [] if recipients else ["В кампании нет получателей"]
+
+    if not srv.enabled_servers():
+        problems.append("В конфиге нет ни одного включённого сервера")
     for recipient in recipients:
         problems.extend(_recipient_problems(recipient))
 

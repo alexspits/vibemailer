@@ -26,6 +26,7 @@ from app.db.models import (
     RecipientStatus,
 )
 from app.db.session import SessionLocal, engine
+from app.services import server_service as srv
 
 random.seed(1234)
 
@@ -86,17 +87,22 @@ def _build_recipients(status: CampaignStatus, index: int) -> list[Recipient]:
             else None
         )
 
+        prefix = random.choice(FAKE_CONFIG_PREFIXES)
         recipient = Recipient(
             email=f"user{i}@{random.choice(FAKE_DOMAINS)}",
             name=random.choice(FAKE_NAMES),
+            client_name=f"{prefix}_{i}",
             status=recipient_status,
             error=error,
             sent_at=sent_at,
         )
-        prefix = random.choice(FAKE_CONFIG_PREFIXES)
+        # Каждый номер конфига на каждом включённом сервере — как это делает импорт.
+        config_count = random.randint(1, 3)
+        recipient.config_count = config_count
         recipient.configs = [
-            Config(name=prefix if n == 0 else f"{prefix}_{n + 1}")
-            for n in range(random.randint(1, 3))
+            Config(seq=seq, server_key=server.key, kind=server.artifact_kind)
+            for seq in range(1, config_count + 1)
+            for server in srv.enabled_servers()
         ]
         recipients.append(recipient)
 

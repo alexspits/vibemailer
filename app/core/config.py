@@ -28,22 +28,9 @@ class Settings(BaseSettings):
     DEFAULT_DELAY: float = 2.0
 
     # --- Источник конфигов ---
-    # ssh — ходим на VPN-сервер, fake — заглушка со случайным конфигом (разработка).
-    CONFIG_SOURCE: str = "ssh"
-
-    # --- SSH к VPN-серверу ---
-    SSH_HOST: str = ""
-    SSH_PORT: int = 22
-    SSH_USER: str = ""
-    SSH_PASSWORD: str = ""
-    SSH_TIMEOUT: int = 30
-
-    # --- API панели AmneziaWG (слушает localhost на VPN-сервере) ---
-    VPN_API_URL: str = "http://127.0.0.1:8080"
-    VPN_API_USER: str = ""
-    VPN_API_PASSWORD: str = ""
-    # Пусто — берём единственный сервер панели.
-    VPN_SERVER_ID: str = ""
+    # Серверов несколько и настройки у каждого свои, поэтому список живёт отдельным
+    # YAML-файлом (см. servers.example.yml), а здесь — только путь к нему.
+    VPN_SERVERS_FILE: str = "servers.yml"
 
     # --- CORS (фронт в dev на отдельном порту, Vite :5173) ---
     # Через запятую; пустое значение (например, пустая env-переменная) — взять умолчание.

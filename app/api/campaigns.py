@@ -17,10 +17,12 @@ from app.schemas.envelope import (
 )
 from app.schemas.import_recipients import RecipientsImportText
 from app.schemas.recipient import RecipientsBulk
+from app.schemas.server import GenerateConfigsIn
 from app.services import campaign_service as cs
 from app.services import config_service as cfs
 from app.services import import_service as imp
 from app.services import recipient_service as rs
+from app.services import server_service as srv
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -92,10 +94,20 @@ def import_recipients(
     status_code=status.HTTP_202_ACCEPTED,
     response_model=MessageOutEnvelope,
 )
-def generate_configs(campaign_id: int, db: Session = Depends(get_db)):
-    """Ставит в очередь конфиги без файла — генерацию делает фоновый воркер."""
+def generate_configs(
+    campaign_id: int,
+    payload: GenerateConfigsIn | None = None,
+    db: Session = Depends(get_db),
+):
+    """Ставит в очередь недостающие конфиги — генерацию делает фоновый воркер.
+
+    Без тела (или с пустым `servers`) берутся все включённые серверы — это кнопка
+    «Сгенерировать все». Со списком — только перечисленные, по кнопке отдельного
+    сервера.
+    """
     camp = cs.get_campaign(db, campaign_id)
-    queued = cfs.enqueue_campaign_configs(db, camp.id)
+    server_keys = srv.resolve_keys(payload.servers if payload else None)
+    queued = cfs.enqueue_campaign_configs(db, camp.id, server_keys)
 
     return ok(MessageOut(detail=f"В очереди на генерацию: {queued}", campaign_id=camp.id))
 
@@ -112,6 +124,27 @@ def start_campaign(campaign_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"errors": problems})
     cs.set_status(db, camp, CampaignStatus.IN_PROGRESS)
     return ok(MessageOut(detail="Рассылка запущена", campaign_id=camp.id))
+
+
+@router.post("/{campaign_id}/retry-failed", response_model=MessageOutEnvelope)
+def retry_failed(campaign_id: int, db: Session = Depends(get_db)):
+    """Возвращает упавших получателей в очередь и открывает кампанию для повтора.
+
+    Статус кампании при этом сбрасывается в NEW, а не запускается отправка сразу:
+    решение «слать снова» остаётся за человеком, кнопкой, как и первый запуск.
+    """
+    camp = cs.get_campaign(db, campaign_id)
+    count = rs.reset_failed(db, camp.id)
+
+    if not count:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="В кампании нет писем с ошибкой",
+        )
+
+    cs.set_status(db, camp, CampaignStatus.NEW)
+
+    return ok(MessageOut(detail=f"Вернули в очередь: {count}", campaign_id=camp.id))
 
 
 @router.post("/{campaign_id}/stop", response_model=MessageOutEnvelope)

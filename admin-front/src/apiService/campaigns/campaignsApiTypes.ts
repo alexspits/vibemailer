@@ -49,8 +49,24 @@ export interface StartCampaignInput {
 
 export type StartCampaignResponseWire = components['schemas']['MessageOutEnvelope'];
 
-export interface GenerateConfigsInput {
+export interface StopCampaignInput {
   id: number;
 }
+
+export type StopCampaignResponseWire = components['schemas']['MessageOutEnvelope'];
+
+export interface RetryFailedInput {
+  id: number;
+}
+
+export type RetryFailedResponseWire = components['schemas']['MessageOutEnvelope'];
+
+export interface GenerateConfigsInput {
+  id: number;
+  /** Ключи серверов; пусто — все включённые («Сгенерировать все»). */
+  servers?: string[];
+}
+
+export type GenerateConfigsRequestWire = components['schemas']['GenerateConfigsIn'];
 
 export type GenerateConfigsResponseWire = components['schemas']['MessageOutEnvelope'];

@@ -103,7 +103,11 @@ export interface paths {
         put?: never;
         /**
          * Generate Configs
-         * @description Ставит в очередь конфиги без файла — генерацию делает фоновый воркер.
+         * @description Ставит в очередь недостающие конфиги — генерацию делает фоновый воркер.
+         *
+         *     Без тела (или с пустым `servers`) берутся все включённые серверы — это кнопка
+         *     «Сгенерировать все». Со списком — только перечисленные, по кнопке отдельного
+         *     сервера.
          */
         post: operations["generate_configs_api_campaigns__campaign_id__configs_generate_post"];
         delete?: never;
@@ -123,6 +127,29 @@ export interface paths {
         put?: never;
         /** Start Campaign */
         post: operations["start_campaign_api_campaigns__campaign_id__start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/campaigns/{campaign_id}/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Failed
+         * @description Возвращает упавших получателей в очередь и открывает кампанию для повтора.
+         *
+         *     Статус кампании при этом сбрасывается в NEW, а не запускается отправка сразу:
+         *     решение «слать снова» остаётся за человеком, кнопкой, как и первый запуск.
+         */
+        post: operations["retry_failed_api_campaigns__campaign_id__retry_failed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -163,6 +190,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recipients/{recipient_id}/configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Configs
+         * @description Добавляет получателю ещё конфиги. Генерацию по-прежнему запускает кнопка.
+         *
+         *     Конфиг создаётся пустым (PENDING) — это же нужно и для привязки: привязать можно
+         *     только к существующей строке конфига, а у человека с пятью доступами на панели
+         *     строк должно быть пять.
+         */
+        post: operations["add_configs_api_recipients__recipient_id__configs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recipients/{recipient_id}/configs/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind New Configs
+         * @description Привязывает получателю сразу несколько клиентов панели — по конфигу на каждого.
+         */
+        post: operations["bind_new_configs_api_recipients__recipient_id__configs_bind_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/configs/{config_id}/download": {
         parameters: {
             query?: never;
@@ -175,6 +246,112 @@ export interface paths {
          * @description Отдаёт файл конфига. Ответ бинарный, без обёртки ApiEnvelope.
          */
         get: operations["download_config_api_configs__config_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/configs/{config_id}/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind Config
+         * @description Привязывает конфиг к клиенту, заведённому на панели вручную.
+         */
+        post: operations["bind_config_api_configs__config_id__bind_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/configs/{config_id}/unbind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unbind Config
+         * @description Снимает привязку, а лишнюю строку конфига убирает.
+         *
+         *     Отвечаем получателем целиком, а не конфигом: строки может уже не быть, да и
+         *     остальные при этом меняются — фронту всё равно нужен свежий список.
+         */
+        post: operations["unbind_config_api_configs__config_id__unbind_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/configs/{config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Config
+         * @description Удаляет строку конфига у получателя. Клиент на панели остаётся жить.
+         */
+        delete: operations["delete_config_api_configs__config_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Servers
+         * @description Все серверы из конфига, включая выключенные — фронт покажет их неактивными.
+         */
+        get: operations["list_servers_api_servers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/servers/{server_key}/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Panel Clients
+         * @description Имена клиентов, которые сейчас есть на панели.
+         *
+         *     Ходит на живую панель, поэтому отвечает не мгновенно — интерфейс запрашивает это
+         *     только когда человек открывает привязку.
+         */
+        get: operations["list_panel_clients_api_servers__server_key__clients_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -204,6 +381,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ArtifactKind
+         * @description Что панель отдаёт получателю.
+         * @enum {string}
+         */
+        ArtifactKind: "file" | "link";
+        /**
+         * BindConfigIn
+         * @description Тело запроса на привязку конфига к клиенту, заведённому на панели вручную.
+         */
+        BindConfigIn: {
+            /** External Name */
+            external_name: string;
+        };
         /**
          * CampaignRead
          * @description Ответ: данные кампании + необязательные счётчики прогресса.
@@ -250,16 +441,35 @@ export interface components {
         CampaignStatus: "new" | "in_progress" | "done" | "done_with_errors" | "error";
         /**
          * ConfigRead
-         * @description Ответ: конфиг получателя со статусом генерации (без содержимого файла).
+         * @description Ответ: конфиг получателя с одного сервера, без содержимого файла.
+         *
+         *     У ссылки подписки содержимое не секретнее самой ссылки, поэтому `link` отдаём
+         *     как есть — фронт показывает её кнопкой «скопировать».
          */
         ConfigRead: {
             /** Id */
             id: number;
             /** Name */
             name: string;
+            /** Panel Name */
+            panel_name: string;
+            /** Seq */
+            seq: number;
+            /** External Name */
+            external_name?: string | null;
+            /**
+             * Is External
+             * @default false
+             */
+            is_external: boolean;
+            /** Server Key */
+            server_key: string;
+            kind: components["schemas"]["ArtifactKind"];
             status: components["schemas"]["ConfigStatus"];
             /** Filename */
             filename?: string | null;
+            /** Link */
+            link?: string | null;
             /**
              * Size
              * @default 0
@@ -269,10 +479,55 @@ export interface components {
             error?: string | null;
         };
         /**
+         * ConfigReadEnvelope
+         * @description Обёртка одного конфига (привязка к клиенту панели).
+         */
+        ConfigReadEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["ConfigRead"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
          * ConfigStatus
          * @enum {string}
          */
         ConfigStatus: "pending" | "queued" | "generating" | "ready" | "failed";
+        /**
+         * ConfigsAdd
+         * @description Тело запроса на добавление получателю ещё конфигов.
+         *
+         *     `servers` — на каких серверах добавить; пусто означает «на всех включённых».
+         *     Список нужен как раз для несимметричного случая: человеку нужно пять доступов на
+         *     одном сервере и по одному на остальных — на панели это пять отдельных клиентов.
+         */
+        ConfigsAdd: {
+            /** Servers */
+            servers?: string[] | null;
+            /**
+             * Count
+             * @default 1
+             */
+            count: number;
+        };
+        /**
+         * ConfigsBind
+         * @description Тело запроса на привязку сразу нескольких клиентов панели к одному получателю.
+         *
+         *     Под каждое имя заводится **свой** конфиг: у человека столько доступов, сколько
+         *     устройств, и привязка второго клиента не должна затирать первый.
+         */
+        ConfigsBind: {
+            /** Server Key */
+            server_key: string;
+            /** Names */
+            names: string[];
+        };
         /**
          * CreateCampaign
          * @description Тело запроса на создание кампании.
@@ -285,6 +540,20 @@ export interface components {
             /** Body */
             body: string;
         };
+        /**
+         * GenerateConfigsIn
+         * @description Тело запроса на генерацию: на каких серверах.
+         *
+         *     Пустой список (или отсутствующее тело) — все включённые серверы, то есть кнопка
+         *     «Сгенерировать все».
+         */
+        GenerateConfigsIn: {
+            /**
+             * Servers
+             * @default []
+             */
+            servers: string[];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -292,23 +561,55 @@ export interface components {
         };
         /**
          * ImportGroup
-         * @description Одно письмо: получатель и конфиги, которые ему уедут.
+         * @description Одно письмо: получатель, его базовое имя и сколько конфигов ему нужно.
+         *
+         *     `existing_client_name` заполняется, если получатель в кампании уже есть: имя
+         *     менять не будем, и в предпросмотре видно, какое останется.
          */
         ImportGroup: {
             /** Email */
             email: string;
-            /** Configs */
-            configs: string[];
-            /**
-             * Existing Configs
-             * @default []
-             */
-            existing_configs: string[];
+            /** Client Name */
+            client_name: string;
+            /** Existing Client Name */
+            existing_client_name?: string | null;
             /**
              * Is Existing
              * @default false
              */
             is_existing: boolean;
+            /**
+             * Count
+             * @default 1
+             */
+            count: number;
+            /**
+             * Existing Count
+             * @default 0
+             */
+            existing_count: number;
+            /**
+             * New Configs
+             * @default 0
+             */
+            new_configs: number;
+            /**
+             * Servers
+             * @default []
+             */
+            servers: string[];
+            /**
+             * New Names
+             * @default []
+             */
+            new_names: string[];
+            /**
+             * Bindings
+             * @default {}
+             */
+            bindings: {
+                [key: string]: string;
+            };
         };
         /**
          * ImportPreview
@@ -324,6 +625,8 @@ export interface components {
             problems: components["schemas"]["ImportRowProblem"][];
             /** Total Rows */
             total_rows: number;
+            /** Total Recipients */
+            total_recipients: number;
             /** Total Configs */
             total_configs: number;
         };
@@ -403,6 +706,22 @@ export interface components {
             error?: string | null;
         };
         /**
+         * ListPanelClientsEnvelope
+         * @description Обёртка списка имён клиентов, живущих на панели сервера.
+         */
+        ListPanelClientsEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            /** Result */
+            result?: string[] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
          * ListRecipientReadEnvelope
          * @description Обёртка списка получателей.
          */
@@ -415,6 +734,22 @@ export interface components {
             status: "success" | "error";
             /** Result */
             result?: components["schemas"]["RecipientRead"][] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * ListServerReadEnvelope
+         * @description Обёртка списка настроенных VPN-серверов.
+         */
+        ListServerReadEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            /** Result */
+            result?: components["schemas"]["ServerRead"][] | null;
             /** Error */
             error?: string | null;
         };
@@ -444,19 +779,31 @@ export interface components {
             error?: string | null;
         };
         /**
+         * PanelKind
+         * @description Тип панели на сервере — определяет, каким адаптером с ним говорить.
+         * @enum {string}
+         */
+        PanelKind: "amnezia" | "3x-ui" | "wg-easy" | "fake";
+        /**
          * RecipientCreate
          * @description Тело запроса на добавление одного получателя.
+         *
+         *     `client_name` — базовое имя клиента, `count` — сколько конфигов ему нужно. Имена
+         *     получаются нумерацией (`alice` + 3 → `alice1`, `alice2`, `alice3`), и каждое
+         *     заводится на каждом включённом сервере.
          */
         RecipientCreate: {
             /** Email */
             email: string;
             /** Name */
             name?: string | null;
+            /** Client Name */
+            client_name: string;
             /**
-             * Configs
-             * @default []
+             * Count
+             * @default 1
              */
-            configs: string[];
+            count: number;
         };
         /**
          * RecipientRead
@@ -471,6 +818,10 @@ export interface components {
             email: string;
             /** Name */
             name?: string | null;
+            /** Client Name */
+            client_name: string;
+            /** Config Count */
+            config_count: number;
             status: components["schemas"]["RecipientStatus"];
             /** Error */
             error?: string | null;
@@ -481,6 +832,21 @@ export interface components {
              * @default []
              */
             configs: components["schemas"]["ConfigRead"][];
+        };
+        /**
+         * RecipientReadEnvelope
+         * @description Обёртка одного получателя.
+         */
+        RecipientReadEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["RecipientRead"] | null;
+            /** Error */
+            error?: string | null;
         };
         /**
          * RecipientStatus
@@ -502,6 +868,20 @@ export interface components {
         RecipientsImportText: {
             /** Text */
             text: string;
+        };
+        /**
+         * ServerRead
+         * @description Ответ: один настроенный сервер.
+         */
+        ServerRead: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            panel: components["schemas"]["PanelKind"];
+            artifact: components["schemas"]["ArtifactKind"];
+            /** Enabled */
+            enabled: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -785,7 +1165,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GenerateConfigsIn"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {
@@ -820,6 +1204,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageOutEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_failed_api_campaigns__campaign_id__retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -898,6 +1313,76 @@ export interface operations {
             };
         };
     };
+    add_configs_api_recipients__recipient_id__configs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipient_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConfigsAdd"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipientReadEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bind_new_configs_api_recipients__recipient_id__configs_bind_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipient_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigsBind"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipientReadEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_config_api_configs__config_id__download_get: {
         parameters: {
             query?: never;
@@ -916,6 +1401,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bind_config_api_configs__config_id__bind_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigReadEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unbind_config_api_configs__config_id__unbind_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipientReadEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_config_api_configs__config_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipientReadEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_servers_api_servers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListServerReadEnvelope"];
+                };
+            };
+        };
+    };
+    list_panel_clients_api_servers__server_key__clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListPanelClientsEnvelope"];
                 };
             };
             /** @description Validation Error */

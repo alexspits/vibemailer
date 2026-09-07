@@ -1,4 +1,4 @@
-.PHONY: install dev run lint format remake_db fresh_dev
+.PHONY: install dev run lint format check_servers check_bindings check_smtp remake_db fresh_dev
 
 PIPENV := pipenv run
 APP := app.main:app
@@ -18,6 +18,15 @@ lint:
 
 format:
 	$(PIPENV) ruff format
+
+check_servers:
+	$(PIPENV) python check_servers.py
+
+check_bindings:
+	$(PIPENV) python check_servers.py --bindings
+
+check_smtp:
+	$(PIPENV) python check_smtp.py
 
 remake_db:
 	rm -f $(DB)

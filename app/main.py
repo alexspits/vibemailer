@@ -7,13 +7,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import campaigns, configs, health, recipients
+from app.api import campaigns, configs, health, recipients, servers
 from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.db.base import Base
 from app.db.session import engine
 from app.schemas.envelope import ApiEnvelope
-from app.services.config_generator import get_config_source
 from app.services.config_worker import ConfigWorker
 from app.services.mail_sender import MailSender
 from app.services.worker import Worker
@@ -32,7 +31,7 @@ def _start_workers(app: FastAPI, settings: Settings) -> None:
     app.state.worker = Worker(settings, MailSender(settings))
     app.state.worker.start()
 
-    app.state.config_worker = ConfigWorker(get_config_source(settings))
+    app.state.config_worker = ConfigWorker()
     app.state.config_worker.start()
 
 
@@ -92,4 +91,5 @@ async def unhandled_exception_handler(_: Request, _exc: Exception) -> JSONRespon
 app.include_router(campaigns.router)
 app.include_router(recipients.router)
 app.include_router(configs.router)
+app.include_router(servers.router)
 app.include_router(health.router)

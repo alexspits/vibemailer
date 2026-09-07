@@ -62,41 +62,29 @@
               </div>
 
               <div :class="$style.field">
-                <span :class="$style.fieldLabel">Конфиги</span>
+                <span :class="$style.fieldLabel">Имя конфига</span>
 
-                <div
-                  v-for="(_config, index) in manualConfigs"
-                  :key="index"
-                  :class="$style.configRow"
-                >
-                  <Input
-                    v-model="manualConfigs[index]"
-                    placeholder="Markin_Sergey"
-                    data-test="manual-config-input"
-                    @keydown.enter="addConfigField"
-                  />
+                <Input
+                  v-model="manualClientName"
+                  placeholder="Markin_Sergey"
+                  data-test="manual-config-input"
+                />
+              </div>
 
-                  <Button
-                    :disabled="manualConfigs.length === 1"
-                    variant="outline"
-                    size="icon"
-                    data-test="remove-config-button"
-                    @click="removeConfigField(index)"
-                  >
-                    <X :class="$style.iconBtn" />
-                  </Button>
-                </div>
+              <div :class="$style.field">
+                <span :class="$style.fieldLabel">Сколько конфигов</span>
 
-                <Button
-                  :class="$style.addConfigButton"
-                  variant="outline"
-                  data-test="add-config-button"
-                  @click="addConfigField"
-                >
-                  <Plus :class="$style.iconBtn" />
+                <Input
+                  v-model="manualCount"
+                  type="number"
+                  min="1"
+                  data-test="manual-count-input"
+                />
 
-                  Ещё конфиг
-                </Button>
+                <span :class="$style.fieldHint">
+                  Имена получатся нумерацией: {{ manualNamesHint }}. Каждое заводится
+                  на всех серверах сразу.
+                </span>
               </div>
             </div>
           </TabsContent>
@@ -113,7 +101,7 @@
           data-test="preview-summary"
         >
           {{ preview.totalRows }} {{ rowsLabel }} → {{ preview.groups.length }} {{ lettersLabel }},
-          конфигов {{ preview.totalConfigs }}
+          новых получателей {{ preview.totalRecipients }}, конфигов {{ preview.totalConfigs }}
         </p>
 
         <div
@@ -154,29 +142,56 @@
               </Badge>
 
               <span :class="$style.count">
-                {{ group.configs.length }} {{ configsLabel(group.configs.length) }}
+                {{ group.count }} {{ configsLabel(group.count) }}
               </span>
             </div>
 
-            <div :class="$style.chips">
+            <div
+              v-if="group.newNames.length"
+              :class="$style.chips"
+            >
               <span
-                v-for="config in group.existingConfigs"
-                :key="`existing-${config}`"
-                :class="[$style.chip, $style.chipExisting]"
-                data-test="existing-config-chip"
-              >
-                {{ config }}
-              </span>
-
-              <span
-                v-for="config in group.configs"
-                :key="config"
+                v-for="name in group.newNames"
+                :key="name"
                 :class="$style.chip"
                 data-test="config-chip"
               >
-                {{ config }}
+                {{ name }}
               </span>
             </div>
+
+            <p
+              v-if="group.newConfigs"
+              :class="$style.groupNote"
+              data-test="group-servers"
+            >
+              Заведём {{ group.newConfigs }} на серверах:
+              {{ group.servers.map(serverTitle).join(', ') }}
+            </p>
+
+            <p
+              v-if="Object.keys(group.bindings).length"
+              :class="$style.groupNote"
+              data-test="group-bindings"
+            >
+              Привяжем к уже заведённым: {{ bindingsLabel(group.bindings) }}
+            </p>
+
+            <p
+              v-else
+              :class="$style.groupNote"
+              data-test="group-servers"
+            >
+              Всё уже заведено — ничего не изменится.
+            </p>
+
+            <p
+              v-if="group.existingClientName && group.existingClientName !== group.clientName"
+              :class="$style.nameConflict"
+              data-test="name-conflict"
+            >
+              У получателя уже есть имя {{ group.existingClientName }} — оно и останется.
+            </p>
           </div>
         </div>
       </div>
@@ -227,7 +242,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { LoaderCircle, Plus, X } from '@lucide/vue';
+import { LoaderCircle } from '@lucide/vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -246,6 +261,7 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import useGetServers from '@/composables/data/useGetServers';
 import useImportRecipients from '@/composables/data/useImportRecipients';
 import usePreviewRecipientsImport from '@/composables/data/usePreviewRecipientsImport';
 import useToast from '@/composables/useToast';
@@ -276,48 +292,79 @@ const {
   onDone: onImportDone,
 } = useImportRecipients();
 
+const {
+  servers,
+  getServers,
+} = useGetServers();
+
+const serverTitles = computed(
+  () => new Map((servers.value ?? []).map((server) => [server.key, server.title])),
+);
+
+function serverTitle(serverKey: string): string {
+  return serverTitles.value.get(serverKey) ?? serverKey;
+}
+
+function bindingsLabel(bindings: Record<string, string>): string {
+  return Object.entries(bindings)
+    .map(([serverKey, panelName]) => `${serverTitle(serverKey)} → ${panelName}`)
+    .join(', ');
+}
+
 type Mode = 'paste' | 'manual';
 
 const mode = ref<Mode>('paste');
 const text = ref('');
 const manualEmail = ref('');
-const manualConfigs = ref<string[]>(['']);
+const manualClientName = ref('');
+const manualCount = ref('1');
 const isInputStep = ref(true);
 
 const isManualMode = computed(() => mode.value === 'manual');
 
 const description = computed(() => (
   isManualMode.value
-    ? 'Одна почта и её конфиги. Если такая почта уже есть в кампании, конфиги допишутся к ней.'
-    : 'Вставьте две колонки из таблицы: имя конфига и почта. Строки с одинаковой почтой уедут одним письмом.'
+    ? 'Одна почта, имя конфига и сколько их нужно. Имена получатся нумерацией.'
+    : 'Вставьте из таблицы: имя конфига, почту, количество (необязательно) и привязки к уже заведённым на панелях клиентам вида «ru:adonm» (тоже необязательно).'
 ));
 
 const parseLabel = computed(() => (isManualMode.value ? 'Продолжить' : 'Разобрать'));
 
-const filledManualConfigs = computed(
-  () => manualConfigs.value.map((config) => config.trim()).filter(Boolean),
-);
+// Количество из поля: пустое или мусорное считаем за один конфиг, а не за ошибку —
+// бэкенд всё равно проверит, а форма не должна залипать на полпути ввода.
+const parsedManualCount = computed(() => {
+  const parsed = Number.parseInt(manualCount.value, 10);
 
-// Обе вкладки шлют на бэк один и тот же формат — две колонки через таб.
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+});
+
+// Повторяет CONFIG_NAME_SEPARATOR из app/db/models.py: подсказка рисуется до похода
+// на бэкенд, поэтому разделитель приходится знать и здесь. Сами имена в предпросмотре
+// приходят уже с сервера.
+const NAME_SEPARATOR = '-';
+
+const manualNamesHint = computed(() => {
+  const base = manualClientName.value.trim() || 'alice';
+  const count = parsedManualCount.value;
+  const name = (n: number) => `${base}${NAME_SEPARATOR}${n}`;
+  const names = Array.from({ length: Math.min(count, 3) }, (_, i) => name(i + 1));
+
+  return count > 3 ? `${names.join(', ')}, …${name(count)}` : names.join(', ');
+});
+
+// Обе вкладки шлют на бэк один и тот же формат — колонки через таб.
 const importText = computed(() => {
   if (!isManualMode.value) {
     return text.value;
   }
 
   const email = manualEmail.value.trim();
+  const clientName = manualClientName.value.trim();
 
-  return filledManualConfigs.value.map((config) => `${config}\t${email}`).join('\n');
+  return email && clientName ? `${clientName}\t${email}\t${parsedManualCount.value}` : '';
 });
 
 const isPreviewDisabled = computed(() => isPreviewLoading.value || !importText.value.trim());
-
-function addConfigField() {
-  manualConfigs.value.push('');
-}
-
-function removeConfigField(index: number) {
-  manualConfigs.value.splice(index, 1);
-}
 
 const isImportDisabled = computed(
   () => isImporting.value || !preview.value || preview.value.groups.length === 0,
@@ -413,13 +460,18 @@ onImportDone(() => {
 });
 
 watch(isOpen, (opened) => {
-  if (!opened) {
-    mode.value = 'paste';
-    text.value = '';
-    manualEmail.value = '';
-    manualConfigs.value = [''];
-    isInputStep.value = true;
+  if (opened) {
+    // Названия серверов нужны предпросмотру; список маленький и кешируется композаблом.
+    getServers();
+    return;
   }
+
+  mode.value = 'paste';
+  text.value = '';
+  manualEmail.value = '';
+  manualClientName.value = '';
+  manualCount.value = '1';
+  isInputStep.value = true;
 });
 </script>
 
@@ -454,14 +506,19 @@ watch(isOpen, (opened) => {
   color: var(--foreground);
 }
 
-.configRow {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.fieldHint {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
 }
 
-.addConfigButton {
-  align-self: flex-start;
+.nameConflict {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.groupNote {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
 }
 
 .iconBtn {

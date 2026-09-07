@@ -18,12 +18,27 @@ class ImportRowProblem(BaseModel):
 
 
 class ImportGroup(BaseModel):
-    """Одно письмо: получатель и конфиги, которые ему уедут."""
+    """Одно письмо: получатель, его базовое имя и сколько конфигов ему нужно.
+
+    `existing_client_name` заполняется, если получатель в кампании уже есть: имя
+    менять не будем, и в предпросмотре видно, какое останется.
+    """
 
     email: str
-    configs: list[str]
-    existing_configs: list[str] = []
+    client_name: str
+    existing_client_name: str | None = None
     is_existing: bool = False
+    # Сколько конфигов будет у получателя после импорта и сколько было.
+    count: int = 1
+    existing_count: int = 0
+    # Сколько строк конфигов реально заведётся (по всем серверам).
+    new_configs: int = 0
+    # Ключи серверов, которых коснётся импорт.
+    servers: list[str] = []
+    # Имена конфигов, которые появятся: alice-1, alice-2, …
+    new_names: list[str] = []
+    # Ключ сервера → имя клиента на панели, к которому привяжется первый конфиг.
+    bindings: dict[str, str] = {}
 
 
 class ImportPreview(BaseModel):
@@ -32,6 +47,7 @@ class ImportPreview(BaseModel):
     groups: list[ImportGroup]
     problems: list[ImportRowProblem] = []
     total_rows: int
+    total_recipients: int
     total_configs: int
 
 
