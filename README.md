@@ -28,6 +28,78 @@ make dev                                            # или: pipenv run python 
 pipenv run python -m app --reload --port 8000
 ```
 
+## Запуск в Docker
+
+Один контейнер на всё: FastAPI отдаёт и API, и собранный фронт, поэтому адрес один и
+CORS не нужен.
+
+```bash
+cp .env.example .env                # заполнить SMTP
+cp servers.example.yml servers.yml  # заполнить доступы к панелям
+mkdir -p data && cp vibe_mail.db data/   # если переносите существующую базу
+make docker_build
+make docker_up                      # интерфейс: http://localhost:8000
+```
+
+Логи — `make docker_logs`, остановка — `make docker_down`.
+
+Что пробрасывается внутрь и почему:
+
+| Что | Куда | Зачем |
+|---|---|---|
+| `servers.yml` | `/app/servers.yml` (ro) | доступы к панелям; в образ не попадают |
+| `.env` | переменные окружения | SMTP; в образ не попадает |
+| `./data` | `/data` | база кампаний и выданных конфигов переживает пересборку |
+| `~/.ssh` | `/home/app/.ssh` (ro) | ключи, алиасы серверов из `config` и `known_hosts` |
+
+Порт публикуется **только на 127.0.0.1**: у API нет аутентификации, а среди его ручек
+есть отдача конфигов с приватными ключами. Наружу его выставлять нельзя.
+
+Контейнер работает под uid 1000 — тем же, что и обычный пользователь на хосте: иначе
+он не прочитает ключи (права 600) и не запишет в `./data`. Если ваш `id -u` отличается,
+добавьте в `.env` строки `APP_UID=` и `APP_GID=` со своими значениями.
+
+Пробники работают и внутри контейнера:
+
+```bash
+docker compose exec vibe-mail python check_servers.py
+docker compose exec vibe-mail python check_smtp.py
+```
+
+### Как поделиться образом
+
+В образе нет ни доступов, ни базы — проверено поиском по его файловой системе:
+`servers.yml`, `.env`, `~/.ssh` и `*.db` пробрасываются томами и внутрь не попадают.
+Поэтому образ можно отдавать кому угодно; получателю всё равно понадобятся свои
+`servers.yml`, `.env` и ключи.
+
+Проще всего — файлом, без реестра:
+
+```bash
+docker save vibe-mail | gzip > vibe-mail.tar.gz   # ~90 МБ в архиве
+# на другой машине:
+docker load < vibe-mail.tar.gz
+```
+
+Через реестр, если делиться приходится часто (репозиторий уже на GitHub, так что
+ghcr.io ближе всего):
+
+```bash
+echo $GITHUB_TOKEN | docker login ghcr.io -u <логин> --password-stdin
+docker tag vibe-mail ghcr.io/<логин>/vibe-mail:latest
+docker push ghcr.io/<логин>/vibe-mail:latest
+```
+
+Образ собран под `linux/amd64`. На Apple Silicon он пойдёт только через эмуляцию и
+будет заметно медленнее; для таких машин собирайте multi-arch:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t <тег> --push .
+```
+
+Но чаще всего проще отдать не образ, а ссылку на репозиторий: `docker compose build`
+соберёт то же самое из исходников, и получатель точно знает, что внутри.
+
 ## Конфигурация (`.env`)
 
 | Переменная | Назначение | По умолчанию |

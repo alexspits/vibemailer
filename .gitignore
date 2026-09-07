@@ -15,3 +15,6 @@ attachments/**/*
 servers.yml*
 servers.*.yml
 !servers.example.yml
+
+# Том контейнера: там живёт та же база с кампаниями и выданными конфигами.
+data/

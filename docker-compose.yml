@@ -1,0 +1,43 @@
+services:
+  vibe-mail:
+    build: .
+    image: vibe-mail
+    container_name: vibe-mail
+
+    # Только на localhost. У API нет аутентификации, а среди его ручек —
+    # /api/configs/{id}/download, отдающая приватные ключи: наружу его выставлять
+    # нельзя ни при каких обстоятельствах.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    # Тем же uid, что и хозяин ключей на хосте, иначе контейнер не прочитает ~/.ssh
+    # и не сможет писать в ./data. Если ваш `id -u` не 1000 — задайте APP_UID в .env.
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+
+    env_file: .env
+
+    environment:
+      # Пути внутри контейнера перекрывают те, что в .env: там они относительные и
+      # указывают на рабочую копию.
+      DATABASE_URL: sqlite:////data/vibe_mail.db
+      VPN_SERVERS_FILE: /app/servers.yml
+
+    volumes:
+      # Доступы к панелям — только на чтение и только в контейнер: в образ они не
+      # попадают, иначе уехали бы вместе с ним.
+      - ./servers.yml:/app/servers.yml:ro
+      # База с кампаниями и выданными конфигами. Каталог на хосте, а не том docker,
+      # чтобы её можно было скопировать и посмотреть без docker cp.
+      - ./data:/data
+      # Ключи и ~/.ssh/config: сервера прописаны алиасами (ru-srv), а известные ключи
+      # хостов лежат в known_hosts — без него подмена сервера прошла бы незамеченной.
+      - ${HOME}/.ssh:/home/app/.ssh:ro
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -1,11 +1,18 @@
-"""Точка сборки FastAPI-приложения."""
+"""Точка сборки FastAPI-приложения.
+
+В образе Docker рядом лежит собранный фронт, и приложение отдаёт его само: один
+адрес на всё, поэтому фронту не нужен отдельный origin, а значит и CORS. В dev
+сборки нет — там фронт поднимает Vite на своём порту, и CORS как раз нужен.
+"""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api import campaigns, configs, health, recipients, servers
 from app.core.config import Settings, get_settings
@@ -18,6 +25,10 @@ from app.services.mail_sender import MailSender
 from app.services.worker import Worker
 
 DEFAULT_CORS_ORIGIN = "http://localhost:5173"
+
+# Куда собирается фронт. В образе каталог есть, в рабочей копии — только после
+# `npm run build`, и тогда приложение начнёт отдавать его и в dev.
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "admin-front" / "dist"
 
 
 def _cors_origins(settings: Settings) -> list[str]:
@@ -93,3 +104,35 @@ app.include_router(recipients.router)
 app.include_router(configs.router)
 app.include_router(servers.router)
 app.include_router(health.router)
+
+
+def _mount_frontend(application: FastAPI) -> None:
+    """Отдаёт собранный фронт, если он рядом. Без сборки не делает ничего.
+
+    Маршруты vue-router живут на клиенте (`createWebHistory`), поэтому на любой
+    неизвестный путь отдаём index.html — иначе перезагрузка страницы на
+    `/campaigns/1` вернула бы 404. Пути под /api из этого исключены: там 404 должен
+    оставаться честным, а не превращаться в html.
+    """
+    if not (FRONTEND_DIR / "index.html").is_file():
+        return
+
+    application.mount(
+        "/assets",
+        StaticFiles(directory=FRONTEND_DIR / "assets"),
+        name="assets",
+    )
+
+    @application.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str) -> FileResponse:
+        if path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Не найдено")
+
+        candidate = FRONTEND_DIR / path
+        if path and candidate.is_file():
+            return FileResponse(candidate)
+
+        return FileResponse(FRONTEND_DIR / "index.html")
+
+
+_mount_frontend(app)

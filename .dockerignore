@@ -1,0 +1,26 @@
+# Секреты в образ не попадают: servers.yml и .env пробрасываются томами, иначе
+# уехали бы вместе с образом куда угодно.
+.env
+.env.*
+servers.yml*
+servers.*.yml
+*.db
+data/
+
+# Мусор сборки и окружений — образ собирает всё сам.
+.git
+.gitignore
+.venv
+__pycache__/
+**/__pycache__/
+*.pyc
+admin-front/node_modules
+admin-front/dist
+.ruff_cache
+.pytest_cache
+
+# Локальное, к работе приложения не относится
+.agents
+.claude
+TODO.md
+AGENTS.md

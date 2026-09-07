@@ -1,0 +1,59 @@
+# Вариант для Portainer. От основного docker-compose.yml отличается тремя вещами,
+# и все три — из-за того, что стек разворачивает не ваша оболочка из каталога
+# проекта, а сам Portainer из своего контейнера:
+#
+#   1. Пути к томам абсолютные. Относительные (./data) Portainer посчитал бы от
+#      своего рабочего каталога и создал бы пустые папки не там.
+#   2. Нет env_file: файл .env лежит на хосте, а Portainer читает compose внутри
+#      своего контейнера и до него не дотянется. Секреты задаются переменными стека
+#      (в интерфейсе: Stacks → Environment variables).
+#   3. Нет build: образ уже собран на хосте как vibe-mail. Сборку из каталога
+#      Portainer сделать не сможет — контекста у него нет.
+#
+# Пересобирать образ после правок кода нужно по-прежнему руками:
+#     docker compose build && docker compose -f docker-compose.portainer.yml up -d
+
+services:
+  vibe-mail:
+    image: vibe-mail
+    container_name: vibe-mail
+
+    # Только на localhost. У API нет аутентификации, а среди его ручек —
+    # /api/configs/{id}/download, отдающая приватные ключи.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    # Тот же uid, что у хозяина ключей на хосте: иначе не прочитает ~/.ssh (600)
+    # и не запишет в data/. Свой смотрите через `id -u`.
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+
+    environment:
+      # Задаются переменными стека в интерфейсе Portainer.
+      SMTP_HOST: "${SMTP_HOST:-smtp.gmail.com}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD}"
+      SMTP_USE_TLS: "${SMTP_USE_TLS:-true}"
+      SMTP_USE_SSL: "${SMTP_USE_SSL:-false}"
+      RETRIES: "${RETRIES:-3}"
+      DEFAULT_DELAY: "${DEFAULT_DELAY:-2.0}"
+      # Пути внутри контейнера — фиксированные.
+      DATABASE_URL: "sqlite:////data/vibe_mail.db"
+      VPN_SERVERS_FILE: "/app/servers.yml"
+
+    # PROJECT_DIR и SSH_DIR задаются переменными стека — абсолютными путями на хосте,
+    # например /home/user/vibe_mail и /home/user/.ssh. Относительные пути здесь не
+    # работают: Portainer считал бы их от своего каталога.
+    volumes:
+      - "${PROJECT_DIR}/servers.yml:/app/servers.yml:ro"
+      - "${PROJECT_DIR}/data:/data"
+      - "${SSH_DIR}:/home/app/.ssh:ro"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
