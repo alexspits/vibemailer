@@ -21,7 +21,7 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from typing import TYPE_CHECKING
 
-from app.core.servers import ArtifactKind
+from app.core.servers import ArtifactKind, PanelKind
 from app.services import server_service as srv
 
 if TYPE_CHECKING:
@@ -32,6 +32,52 @@ log = logging.getLogger("vibe_mail.mail_sender")
 
 # Заголовок блока со ссылками подписки в конце письма.
 LINKS_HEADER = "Ссылки подписки:"
+
+# Памятка получателю. Собирается по тому, что человеку реально досталось: писать про
+# файлы тому, кому уехали одни ссылки, — значит заставить его гадать, что он потерял.
+HOWTO_HEADER = "Чем открыть:"
+
+# Клиенты для ссылки подписки (VLESS/Reality). Ссылки проверены: у happ обязателен
+# www, без него домен переехал и отдаёт 404. Для FoXray ссылки нет намеренно —
+# страницы, выдающие себя за официальные, ведут на TestFlight и выглядят подделкой,
+# а посылать тридцати людям сомнительную ссылку хуже, чем попросить найти по названию.
+# Порядок не случайный: сначала то, что ставится без чужого аккаунта App Store.
+LINK_CLIENTS = (
+    "Ссылку подписки можно открыть прямо в браузере — там список подходящих "
+    "приложений и QR-коды, с телефона проще всего отсканировать. Можно и наоборот: "
+    "скопировать ссылку и добавить её в приложение вручную, кнопкой «Добавить "
+    "подписку» или «Add subscription». Дальше приложение само скачает настройки и "
+    "будет обновлять их без вашего участия.\n"
+    "\n"
+    "Подойдёт любое из:\n"
+    "  Happ — https://www.happ.su/main/ru\n"
+    "  Incy (iPhone, Android, компьютер) — https://incy.cc/\n"
+    "  Husi (Android) — https://github.com/xchacha20-poly1305/husi\n"
+    "  Streisand (iPhone, iPad, Mac) — https://apps.apple.com/app/id6450534064\n"
+    "  FoXray (iPhone, iPad, Mac) — найдите по названию в App Store\n"
+    "\n"
+    "Streisand и FoXray из российского App Store, скорее всего, не поставятся — "
+    "для них нужен аккаунт другой страны. Первые три доступны без этого.\n"
+    "\n"
+    "Если вы пользовались NekoBox на Android — стоит перейти на любое из "
+    "перечисленных: NekoBox больше не развивают, и работает он всё хуже."
+)
+
+# Клиенты для файла .conf, по типу панели. AmneziaWG — отдельная строка не для
+# красоты: её конфиг содержит параметры обфускации, и обычный WireGuard такой файл
+# не откроет.
+FILE_CLIENTS: dict[PanelKind, str] = {
+    PanelKind.AMNEZIA: (
+        "открываются приложением Amnezia (https://amnezia.org/), а на Android ещё и "
+        "WG Tunnel (https://www.wgtunnel.com/). Обычный WireGuard их не примет: "
+        "внутри настройки маскировки, которых он не знает."
+    ),
+    PanelKind.WG_EASY: (
+        "открываются официальным WireGuard (https://www.wireguard.com/install/), "
+        "WG Tunnel (https://www.wgtunnel.com/) или Amnezia (https://amnezia.org/) — "
+        "подойдёт любое."
+    ),
+}
 
 
 class MailSender:
@@ -119,9 +165,50 @@ class MailSender:
 
         return "\n\n".join(["", LINKS_HEADER, "\n".join(lines)])
 
+    @staticmethod
+    def _panel_kind(server_key: str) -> PanelKind | None:
+        """Тип панели сервера; None — сервера уже нет в конфиге."""
+        server = srv.find_server(server_key)
+        return server.panel if server else None
+
+    def _howto_block(self, configs: list[Config]) -> str:
+        """Памятка «чем открыть». Пустая строка, если сказать нечего.
+
+        Строки собираются по тому, что человеку досталось: получателю с одними
+        ссылками не нужен абзац про вложения, а владельцу файла с AmneziaWG важно
+        знать, что обычный WireGuard его не откроет.
+        """
+        lines = []
+
+        if any(c.kind is ArtifactKind.LINK and c.link for c in configs):
+            lines.append(LINK_CLIENTS)
+
+        files = [c for c in configs if c.kind is ArtifactKind.FILE and c.content is not None]
+        seen: set[PanelKind] = set()
+
+        for config in files:
+            kind = self._panel_kind(config.server_key)
+            advice = FILE_CLIENTS.get(kind) if kind else None
+
+            if advice is None or kind in seen:
+                continue
+
+            seen.add(kind)
+            # Приписываем окончание имени файла: у человека во вложениях несколько
+            # .conf, и без этого непонятно, к какому из них абзац.
+            lines.append(
+                f"{self._server_title(config.server_key)}, "
+                f"файлы …_{config.server_key}.conf — {advice}"
+            )
+
+        if not lines:
+            return ""
+
+        return "\n\n".join(["", HOWTO_HEADER, "\n\n".join(lines)])
+
     def _compose_body(self, campaign: Campaign, configs: list[Config]) -> str:
-        """Текст письма: тело кампании, следом ссылки подписки."""
-        return f"{campaign.body}{self._links_block(configs)}"
+        """Текст письма: тело кампании, ссылки подписки, следом памятка."""
+        return f"{campaign.body}{self._links_block(configs)}{self._howto_block(configs)}"
 
     def _build_message(
         self, campaign: Campaign, recipient: Recipient, configs: list[Config]
