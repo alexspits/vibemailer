@@ -38,7 +38,7 @@
             <Textarea
               v-model="text"
               :class="$style.textarea"
-              placeholder="Markin_Sergey&#9;shpenator@gmail.com"
+              placeholder="Plus_Vibe&#9;plusvibe@slop.com"
               data-test="recipients-textarea"
             />
           </TabsContent>
@@ -56,7 +56,7 @@
                 <Input
                   id="manual-email"
                   v-model="manualEmail"
-                  placeholder="shpenator@gmail.com"
+                  placeholder="plusvibe@slop.com"
                   data-test="manual-email-input"
                 />
               </div>
@@ -66,7 +66,7 @@
 
                 <Input
                   v-model="manualClientName"
-                  placeholder="Markin_Sergey"
+                  placeholder="Plus_Vibe"
                   data-test="manual-config-input"
                 />
               </div>

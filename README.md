@@ -79,7 +79,7 @@ curl -X POST http://127.0.0.1:8000/api/campaigns/1/start
 ```bash
 curl -X POST http://127.0.0.1:8000/api/campaigns/1/recipients/import \
   -H 'Content-Type: application/json' \
-  --data-binary $'{"text":"Markin_Sergey\tshpenator@gmail.com\nMarkin_Sergey_2\tshpenator@gmail.com"}'
+  --data-binary $'{"text":"Plus_Vibe\tplusvibe@slop.com\nPlus_Vibe_2\tplusvibe@slop.com"}'
 ```
 
 ## Как это работает
