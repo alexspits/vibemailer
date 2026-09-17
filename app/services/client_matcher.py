@@ -189,13 +189,10 @@ def _same_person(first: str, second: str) -> bool:
     return longer.startswith(shorter) and len(longer) - len(shorter) <= _BASE_SLACK
 
 
-def _score_against(terms: list[str], name: str, stop_words: frozenset[str]) -> float:
-    """Похожесть имени на набор строк — лучшая из трёх мер."""
-    if not terms:
-        return 0.0
-
-    query_tokens = [token for term in terms for token in _tokens(term, stop_words)]
-    query_flat = _normalized(" ".join(terms))
+def _score_term(term: str, name: str, stop_words: frozenset[str]) -> float:
+    """Похожесть имени на одну строку запроса — лучшая из трёх мер."""
+    query_tokens = _tokens(term, stop_words)
+    query_flat = _normalized(term)
     candidate_tokens = _tokens(name, stop_words)
     candidate_flat = _normalized(name)
 
@@ -204,6 +201,18 @@ def _score_against(terms: list[str], name: str, stop_words: frozenset[str]) -> f
         _substring_score(query_flat, candidate_flat),
         _bigram_score(query_flat, candidate_flat),
     )
+
+
+def _score_against(terms: list[str], name: str, stop_words: frozenset[str]) -> float:
+    """Похожесть имени на набор строк: лучшая по каждой строке отдельно.
+
+    Именно отдельно, а не свалив все слова в одну кучу. В общей куче совпадения
+    складываются в числителе, а знаменатель упирается в длину имени клиента, и оценка
+    растёт от повторов: подсказка `aleksandr` при почте `aleksandr@…` удваивала счёт и
+    ставила галочку чужому `aleksey`. Подсказка должна помогать найти, а не повышать
+    уверенность в том, что и так нашлось.
+    """
+    return max((_score_term(term, name, stop_words) for term in terms), default=0.0)
 
 
 def match(
@@ -249,7 +258,15 @@ def _mark_suggested(scored: list[Candidate], stop_words: frozenset[str]) -> list
 
     bases = [_base(candidate.name, stop_words) for candidate in confident]
 
-    if not all(_same_person(bases[0], other) for other in bases[1:]):
+    # Попарно, а не с первой: похожесть основ не транзитивна. `litovka` близка и к
+    # `litovkae`, и к `litovkap`, но между собой это разные люди — сравнение только
+    # с первой основой пропустило бы обоих однофамильцев, стоит появиться третьему
+    # имени без инициала.
+    if not all(
+        _same_person(first, second)
+        for index, first in enumerate(bases)
+        for second in bases[index + 1 :]
+    ):
         return scored
 
     return [

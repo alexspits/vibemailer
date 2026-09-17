@@ -54,6 +54,9 @@ _MIN_COLUMNS = 2
 _MAX_COLUMNS = 4
 DEFAULT_COUNT = 1
 
+# Больше — это не количество устройств, а чужие данные в колонке.
+MAX_COUNT = 20
+
 # Привязка вида «ключ_сервера:имя_на_панели», несколько — через запятую.
 _BINDING_SEPARATOR = ","
 _BINDING_DELIMITER = ":"
@@ -192,7 +195,12 @@ def _field_problem(client_name: str, email: str, raw_count: str, count: int | No
 
 
 def _parse_count(raw: str) -> int | None:
-    """Количество конфигов из третьей колонки. Пусто — один, мусор — None."""
+    """Количество конфигов из третьей колонки. Пусто — один, мусор — None.
+
+    Верхняя граница не придирка: в третью колонку легко попадает не количество, а дата
+    или id из соседнего столбца. `20250101` означал бы двадцать миллионов строк конфигов
+    на каждый сервер — предпросмотр съел бы память ещё до того, как что-то сохранится.
+    """
     if not raw:
         return DEFAULT_COUNT
 
@@ -201,7 +209,7 @@ def _parse_count(raw: str) -> int | None:
     except ValueError:
         return None
 
-    return count if count > 0 else None
+    return count if 0 < count <= MAX_COUNT else None
 
 
 @dataclass
@@ -330,9 +338,26 @@ def _target_count(group: ParsedGroup, recipient: Recipient | None) -> int:
 
     Уменьшить количество импорт не может: клиенты уже заведены на панелях, и удалять
     их молча нельзя. Поэтому берётся большее из заказанного и существующего.
+
+    «Существующее» считается по самому короткому ряду, а не по `config_count`. Ряды
+    независимы: привязав человеку пять клиентов на одной панели, мы подняли бы счётчик
+    до пяти, и повторный импорт той же строки завёл бы ему по пять конфигов на всех
+    остальных серверах — с четырьмя лишними клиентами на каждой панели.
     """
-    existing = recipient.config_count if recipient else 0
-    return max(group.count, existing)
+    return max(group.count, _shortest_row(recipient))
+
+
+def _shortest_row(recipient: Recipient | None) -> int:
+    """Сколько конфигов есть у получателя на самом бедном из включённых серверов."""
+    if recipient is None:
+        return 0
+
+    counts = [
+        sum(1 for config in recipient.configs if config.server_key == key)
+        for key in srv.enabled_keys()
+    ]
+
+    return min(counts, default=0)
 
 
 def _missing_pairs(recipient: Recipient | None, target: int) -> list[tuple[int, str]]:

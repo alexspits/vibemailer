@@ -22,7 +22,7 @@
           data-test="add-configs-servers"
         >
           <button
-            v-for="server in servers ?? []"
+            v-for="server in enabledServers"
             :key="server.key"
             :class="[$style.serverRow, selected.has(server.key) ? $style.serverRowActive : '']"
             type="button"
@@ -101,6 +101,10 @@ const isOpen = defineModel<boolean>('open', { default: false });
 const toast = useToast();
 
 const { servers, getServers } = useGetServers();
+
+// Выключенные сервера в списке — ловушка: бэкенд отвергает запрос целиком, и не
+// добавится ничего, даже для отмеченных рядом рабочих.
+const enabledServers = computed(() => (servers.value ?? []).filter((server) => server.enabled));
 
 const {
   isLoading,

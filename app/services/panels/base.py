@@ -121,6 +121,21 @@ class BasePanel:
         except TransportError as exc:
             raise PanelUnreachable(str(exc)) from exc
 
+    @staticmethod
+    def _json(response, title: str) -> object:
+        """Тело ответа как JSON, а не как JSON — ошибка панели, а не транспорта.
+
+        `Response.json()` бросает `TransportError`, который не наследник `PanelError`.
+        Вызывается он уже после `_request`, поэтому мимо классификации ошибок пролетал
+        наружу: интерфейс привязки отвечал 500 с трейсбеком вместо внятного 502, а
+        воркер терял различие «панель не отвечает» и «панель ответила ерундой».
+        Случай обыденный: протухшая сессия — и панель отдаёт HTML страницы входа.
+        """
+        try:
+            return response.json()
+        except TransportError as exc:
+            raise PanelError(f"Панель {title}: {exc}") from exc
+
     # ------------------------------------------------------------------ #
     # Публичное API
     # ------------------------------------------------------------------ #

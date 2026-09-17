@@ -39,6 +39,9 @@ log = logging.getLogger("vibe_mail.panels.xui")
 
 DEFAULT_SUB_PATH = "/sub/"
 
+# Ответ старой панели на путь нового API.
+NOT_FOUND = 404
+
 # Настройки панели: у свежих версий они под /panel/api/, у прежних — прямо в /panel/.
 SETTINGS_PATHS = ("/panel/api/setting/all", "/panel/setting/all")
 
@@ -116,7 +119,7 @@ class XuiPanel(BasePanel):
                 f"Панель {self.server.title} не пустила: {response.status} {response.body[:200]}"
             )
 
-        payload = response.json()
+        payload = self._json(response, self.server.title)
         if isinstance(payload, dict) and not payload.get("success", True):
             raise PanelError(
                 f"Панель {self.server.title} отклонила логин: {payload.get('msg', '')}"
@@ -142,7 +145,7 @@ class XuiPanel(BasePanel):
                 f"Панель {self.server.title} ответила {response.status}: {response.body[:200]}"
             )
 
-        payload = response.json()
+        payload = self._json(response, self.server.title)
 
         if not isinstance(payload, dict):
             raise PanelError(f"Панель вернула неожиданный ответ: {response.body[:200]}")
@@ -162,6 +165,18 @@ class XuiPanel(BasePanel):
         """
         if self._is_modern is None:
             response = self._call("GET", "/panel/api/clients/list")
+
+            # Ответ «не конверт» — это либо старая панель (её признак — 404 на
+            # незнакомый путь), либо она сейчас нездорова: 502 от прокси, HTML-заглушка,
+            # перезапуск. Второе запоминать нельзя: адаптер живёт весь процесс, и разовый
+            # сбой навсегда увёл бы новую панель на старый API, где клиенты ищутся в
+            # settings инбаундов и потому не находятся — а значит, заводятся заново.
+            if _envelope(response) is None and response.status != NOT_FOUND:
+                raise PanelError(
+                    f"Панель {self.server.title} не ответила на проверку версии API "
+                    f"(код {response.status}). Повторите позже."
+                )
+
             self._is_modern = _envelope(response) is not None
             log.info(
                 "Панель %s: используем %s API 3x-ui",
@@ -416,6 +431,15 @@ class XuiPanel(BasePanel):
         if sub_id is None:
             return None
 
+        if not sub_id:
+            # subId у клиента, заведённого руками, бывает пустым. Собранная ссылка тогда
+            # указывала бы на корень подписки — она уехала бы получателю как готовая, а
+            # там либо пусто, либо чужие конфиги.
+            raise PanelError(
+                f"У клиента {name} на панели {self.server.title} пустой Subscription ID — "
+                "ссылка подписки не соберётся. Задайте его в панели и повторите."
+            )
+
         if sub_id != name:
             log.info(
                 "Клиент %s на %s заведён с subId %r — ссылка будет с ним",
@@ -435,12 +459,20 @@ class XuiPanel(BasePanel):
             )
             return client.get("subId") if client else None
 
-        payload = _envelope(self._call("GET", f"/panel/api/clients/get/{quote(name, safe='')}"))
+        response = self._call("GET", f"/panel/api/clients/get/{quote(name, safe='')}")
+        payload = _envelope(response)
 
-        # Нет клиента, нет доступа, нет такого пути — здесь всё это одинаково значит
-        # «взять нечего». Если дело в доступе, следом попытка создать клиента упрётся
-        # в ту же причину и скажет о ней кодом ответа.
-        if payload is None or not payload.get("success"):
+        if payload is None:
+            # Панель ответила не по протоколу: 502 от прокси, HTML страницы входа,
+            # перезапуск xray. Это не «клиента нет» — а обойтись с этим как с «нет»
+            # значит следом создать второго клиента с тем же именем и сломать доступ,
+            # выданный человеку раньше. Поэтому честная ошибка.
+            raise PanelError(
+                f"Панель {self.server.title} не ответила по клиенту {name} "
+                f"(код {response.status}). Повторите позже."
+            )
+
+        if not payload.get("success"):
             return None
 
         client = _unwrap_client(payload.get("obj"))

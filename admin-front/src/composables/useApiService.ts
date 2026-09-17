@@ -45,8 +45,16 @@ export default function useApiService<T, V extends unknown[] = []>(
     } catch (e) {
       console.error(e);
 
+      // Данные прошлого вызова стираем: иначе диалог, открытый для другого получателя
+      // или сервера, покажет то, что нашлось в прошлый раз, и человек привяжет чужое.
+      data.value = null;
+
       if (options?.errorMessage) {
-        useToast().error(options.errorMessage);
+        // Текст от бэкенда дописываем: он конкретный («Неизвестные серверы: de2»),
+        // а общее «не удалось» не говорит, что именно чинить.
+        const detail = e instanceof Error ? e.message : '';
+
+        useToast().error(detail ? `${options.errorMessage}: ${detail}` : options.errorMessage);
       }
 
       if (typeof onErrorCb === 'function') {

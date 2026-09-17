@@ -32,7 +32,11 @@ docker_build:
 	docker compose build
 
 # data/ создаём заранее: docker создал бы его от root, и потом не удалить без sudo.
+# Проверка перед стартом не придирка: docker на месте отсутствующего файла молча
+# создаёт каталог, и приложение падает с невнятной ошибкой вместо «заполните конфиг».
 docker_up: | data
+	@test -f servers.yml || { echo "Нет servers.yml — скопируйте servers.example.yml и заполните"; exit 1; }
+	@test -f .env || { echo "Нет .env — скопируйте .env.example и заполните SMTP"; exit 1; }
 	docker compose up -d
 	@echo "Интерфейс: http://localhost:8000"
 

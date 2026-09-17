@@ -153,9 +153,11 @@ class ConfigWorker:
         name = config.panel_name
         self._mark_generating(db, config)
 
-        panel = self._panel(config.server_key)
-
         try:
+            # Получение панели тоже внутри try: сервер могли убрать из servers.yml при
+            # живых конфигах, и тогда исключение пролетало мимо `_mark_failed`, оставляя
+            # конфиг в GENERATING навсегда — кнопка генерации такие не подхватывает.
+            panel = self._panel(config.server_key)
             # Привязанного клиента только забираем: создавать под его именем нельзя.
             artifact = self._adopt(panel, name) if config.is_external else panel.ensure_client(name)
         except Exception as exc:  # noqa: BLE001 - ошибка одного конфига не рушит очередь

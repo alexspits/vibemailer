@@ -58,7 +58,7 @@ class WgEasyPanel(BasePanel):
         return response
 
     def _api(self, method: str, path: str, json_body: object | None = None) -> object:
-        return self._call(method, path, json_body).json()
+        return self._json(self._call(method, path, json_body), self.server.title)
 
     # ------------------------------------------------------------------ #
     # Публичное API
@@ -89,10 +89,12 @@ class WgEasyPanel(BasePanel):
         """Текст .conf созданного клиента. Ответ не JSON, а сам файл."""
         response = self._request("GET", f"/api/client/{client_id}/configuration")
 
-        if not response.is_ok:
+        if not response.is_ok or not response.body.strip():
+            # Пустое тело при коде 200 тоже отказ: без проверки получатель получил бы
+            # вложение на ноль байт, а конфиг при этом считался бы готовым.
             raise PanelError(
                 f"Не удалось забрать конфиг {name} с {self.server.title}: "
-                f"{response.status} {response.body[:200]}"
+                f"код {response.status}, {len(response.body)} байт"
             )
 
         return response.body.encode()

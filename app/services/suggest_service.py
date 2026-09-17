@@ -44,8 +44,11 @@ def _panel_names(server: ServerConfig) -> tuple[list[str], str | None]:
     try:
         return srv.list_panel_clients(server.key), None
     except Exception as exc:  # noqa: BLE001 - недоступная панель не должна валить подбор
-        log.warning("Подбор: панель %s не ответила: %s", server.key, exc)
-        return [], str(exc)
+        # У HTTPException в str() спереди код ответа: «502: Панель…». Здесь это не
+        # ответ пользователю, а строчка в интерфейсе, и код в ней только мешает.
+        reason = str(getattr(exc, "detail", exc))
+        log.warning("Подбор: панель %s не ответила: %s", server.key, reason)
+        return [], reason
 
 
 def _taken_names(db: Session, campaign_id: int) -> dict[tuple[str, str], str]:

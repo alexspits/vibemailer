@@ -36,7 +36,7 @@ def _build_recipient(campaign_id: int, item: RecipientCreate, email: str) -> Rec
         campaign_id=campaign_id,
         email=email,
         name=item.name,
-        client_name=item.client_name,
+        client_name=item.client_name.strip(),
         config_count=item.count,
         status=RecipientStatus.PENDING,
     )
@@ -45,13 +45,20 @@ def _build_recipient(campaign_id: int, item: RecipientCreate, email: str) -> Rec
 
 
 def _validate_items(
-    campaign_id: int, items: list[RecipientCreate], known_emails: set[str]
+    campaign_id: int,
+    items: list[RecipientCreate],
+    known_emails: set[str],
+    known_names: set[str],
 ) -> tuple[list[Recipient], list[str]]:
     """Проверяет пакет и собирает получателей к созданию.
 
-    Дубликаты ловятся и по уже существующим в кампании адресам, и внутри самого пакета.
+    Дубликаты ловятся и по уже существующим в кампании данным, и внутри самого пакета —
+    и по адресу, и по базовому имени. Имя тут не формальность: из него выводится имя
+    клиента на панели, и два получателя с базой `alice` дали бы `alice-1` дважды —
+    второму при генерации досталось бы то же самое, что и первому.
     """
     seen = set(known_emails)
+    seen_names = set(known_names)
     problems: list[str] = []
     to_create: list[Recipient] = []
 
@@ -68,7 +75,16 @@ def _validate_items(
             problems.append(f"recipients[{idx}]: дубликат адреса {email}")
             continue
 
+        client_name = item.client_name.strip()
+
+        if client_name.lower() in seen_names:
+            problems.append(
+                f"recipients[{idx}]: имя конфига {client_name} уже занято в этой кампании"
+            )
+            continue
+
         seen.add(email)
+        seen_names.add(client_name.lower())
         to_create.append(_build_recipient(campaign_id, item, email))
 
     return to_create, problems
@@ -78,6 +94,13 @@ def _existing_emails(db: Session, campaign_id: int) -> set[str]:
     """Адреса, уже заведённые в кампании."""
     rows = db.query(Recipient.email).filter_by(campaign_id=campaign_id).all()
     return {row[0].lower() for row in rows}
+
+
+def _existing_client_names(db: Session, campaign_id: int) -> set[str]:
+    """Базовые имена, уже занятые в кампании. В нижнем регистре: на панелях имя
+    клиента часто нечувствительно к регистру, и `Alice` с `alice` там столкнутся."""
+    rows = db.query(Recipient.client_name).filter_by(campaign_id=campaign_id).all()
+    return {row[0].strip().lower() for row in rows}
 
 
 def add_recipients(db: Session, campaign_id: int, items: list[RecipientCreate]) -> list[Recipient]:
@@ -90,7 +113,8 @@ def add_recipients(db: Session, campaign_id: int, items: list[RecipientCreate]) 
     пакете) ничего не создаётся, возвращается HTTPException 400 со списком проблем.
     """
     known_emails = _existing_emails(db, campaign_id)
-    to_create, problems = _validate_items(campaign_id, items, known_emails)
+    known_names = _existing_client_names(db, campaign_id)
+    to_create, problems = _validate_items(campaign_id, items, known_emails, known_names)
 
     if problems:
         raise HTTPException(status_code=400, detail={"errors": problems})
@@ -125,6 +149,12 @@ def add_configs(
         recipient.configs.extend(
             Config(seq=seq, server_key=key, kind=servers[key].artifact_kind)
             for seq in range(last + 1, last + 1 + count)
+        )
+
+    if not recipient.configs:
+        raise HTTPException(
+            status_code=400,
+            detail="Не на чем заводить конфиги: в servers.yml нет включённых серверов",
         )
 
     recipient.config_count = max(config.seq for config in recipient.configs)

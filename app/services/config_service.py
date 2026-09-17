@@ -190,31 +190,50 @@ def bind_suggestions(db: Session, campaign_id: int, items: list) -> tuple[int, i
             detail=f"В кампании нет получателей с id {', '.join(map(str, sorted(unknown)))}",
         )
 
-    servers = {item.server_key: srv.get_server(item.server_key) for item in items}
+    # Сводим запрос к виду «пара (получатель, сервер) → имена без повторов». Два
+    # элемента на одну пару — не выдумка: подбор рисует чипы по серверам, и один и тот
+    # же клиент может попасть в отметки дважды. Без сведения проверка «занят» ничего не
+    # заметила бы (она смотрит в базу, а первая привязка ещё не записана), и человек
+    # получил бы один и тот же доступ двумя вложениями.
+    merged = _merge_items(items)
+
+    servers = {key: srv.get_server(key) for _, key in merged}
     live = {key: set(srv.list_panel_clients(key)) for key in servers}
 
-    _reject_unknown_names(items, live)
-    _reject_duplicate_names(items, by_id)
+    _reject_unknown_names(merged, live)
+    _reject_duplicate_names(merged, by_id)
 
-    for item in items:
-        recipient = by_id[item.recipient_id]
-        wanted = list(dict.fromkeys(name.strip() for name in item.names if name.strip()))
+    for (recipient_id, server_key), names in merged.items():
+        recipient = by_id[recipient_id]
 
-        _reject_taken_names(db, recipient, item.server_key, wanted)
-        _attach_names(recipient, servers[item.server_key], wanted)
+        _reject_taken_names(db, recipient, server_key, names)
+        _attach_names(recipient, servers[server_key], names)
 
     db.commit()
 
-    return sum(len(item.names) for item in items), len({item.recipient_id for item in items})
+    return sum(len(names) for names in merged.values()), len({rid for rid, _ in merged})
 
 
-def _reject_unknown_names(items: list, live: dict[str, set[str]]) -> None:
+def _merge_items(items: list) -> dict[tuple[int, str], list[str]]:
+    """Пары «получатель и сервер» с очищенными именами без повторов."""
+    merged: dict[tuple[int, str], list[str]] = {}
+
+    for item in items:
+        names = merged.setdefault((item.recipient_id, item.server_key), [])
+        names.extend(
+            name.strip() for name in item.names if name.strip() and name.strip() not in names
+        )
+
+    return {key: names for key, names in merged.items() if names}
+
+
+def _reject_unknown_names(merged: dict[tuple[int, str], list[str]], live: dict) -> None:
     """Отказ, если отмеченного клиента на панели уже нет: список мог устареть."""
     missing = {
-        (item.server_key, name)
-        for item in items
-        for name in item.names
-        if name not in live[item.server_key]
+        (server_key, name)
+        for (_, server_key), names in merged.items()
+        for name in names
+        if name not in live[server_key]
     }
 
     if missing:
@@ -225,7 +244,7 @@ def _reject_unknown_names(items: list, live: dict[str, set[str]]) -> None:
         )
 
 
-def _reject_duplicate_names(items: list, by_id: dict) -> None:
+def _reject_duplicate_names(merged: dict[tuple[int, str], list[str]], by_id: dict) -> None:
     """Отказ, если один клиент отмечен сразу у двоих.
 
     Подбор вполне может предложить `lisa` обеим Елизаветам, и заметить это глазами в
@@ -233,16 +252,16 @@ def _reject_duplicate_names(items: list, by_id: dict) -> None:
     """
     seen: dict[tuple[str, str], int] = {}
 
-    for item in items:
-        for name in item.names:
-            owner = seen.setdefault((item.server_key, name), item.recipient_id)
+    for (recipient_id, server_key), names in merged.items():
+        for name in names:
+            owner = seen.setdefault((server_key, name), recipient_id)
 
-            if owner != item.recipient_id:
+            if owner != recipient_id:
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Клиент {name} на сервере {item.server_key} отмечен сразу у "
-                        f"{by_id[owner].email} и {by_id[item.recipient_id].email}"
+                        f"Клиент {name} на сервере {server_key} отмечен сразу у "
+                        f"{by_id[owner].email} и {by_id[recipient_id].email}"
                     ),
                 )
 
@@ -330,9 +349,10 @@ def unbind_external_client(db: Session, config_id: int) -> Recipient:
     same_server = [c for c in recipient.configs if c.server_key == config.server_key]
 
     if len(same_server) > 1:
+        removed_id, server_key = config.id, config.server_key
         db.delete(config)
         db.flush()
-        _renumber(recipient, config.server_key)
+        _renumber(recipient, server_key, removed_id)
     else:
         config.external_name = None
         config.status = ConfigStatus.PENDING
@@ -350,31 +370,45 @@ def delete_config(db: Session, config_id: int) -> Recipient:
     recipient = config.recipient
     server_key = config.server_key
 
+    removed_id = config.id
     db.delete(config)
     db.flush()
-    _renumber(recipient, server_key)
+    _renumber(recipient, server_key, removed_id)
     db.commit()
     db.refresh(recipient)
 
     return recipient
 
 
-def _renumber(recipient: Recipient, server_key: str) -> None:
+def _renumber(recipient: Recipient, server_key: str, removed_id: int | None = None) -> None:
     """Возвращает номерам конфигов сервера сплошной ряд 1..N после удаления строки.
 
     Номер видит получатель — он в имени вложения (`ivan-i-3_ru.conf`), — и дырка в
-    ряду выглядит потерянным файлом. Идём по возрастанию: номера только уменьшаются,
-    поэтому с уникальностью (recipient, seq, server) по пути не столкнёмся.
+    ряду выглядит потерянным файлом.
+
+    Но перенумеровать можно не всегда. `seq` попадает в имя клиента на панели
+    (`Config.name`), а клиента там никто не переименовывает — в AmneziaWG этого и не
+    умеют. Сдвинуть номер у строки, которая уже привязана или уже получила конфиг,
+    значит начать называть чужого пира: содержимое останется от `ivan-i-3`, а зваться
+    будет `ivan-i-2`, и следующая генерация пойдёт на панель за другим клиентом.
+    Поэтому ряд поправляем, только если на этом сервере все строки ещё пустые —
+    обычный случай «добавил лишних и тут же убрал».
+
+    `removed_id` — строка, которую только что отдали в `db.delete()`: из коллекции
+    получателя она пропадёт лишь после обновления сессии, а до того считается живой.
     """
-    ordered = sorted(
-        (c for c in recipient.configs if c.server_key == server_key),
-        key=lambda config: config.seq,
-    )
+    survivors = [
+        config
+        for config in recipient.configs
+        if config.server_key == server_key and config.id != removed_id
+    ]
 
-    for number, config in enumerate(ordered, start=1):
-        config.seq = number
+    if all(_is_free(config) for config in survivors):
+        for number, config in enumerate(sorted(survivors, key=lambda c: c.seq), start=1):
+            config.seq = number
 
-    recipient.config_count = max((c.seq for c in recipient.configs), default=1)
+    alive = [config for config in recipient.configs if config.id != removed_id]
+    recipient.config_count = max((config.seq for config in alive), default=1)
 
 
 def _clear_artifact(config: Config) -> None:

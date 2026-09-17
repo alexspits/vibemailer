@@ -188,7 +188,15 @@ const hint = ref('');
 // сбрасывать то, что человек уже успел отметить руками.
 const checked = ref<Record<string, Set<string>>>({});
 
-const servers = computed(() => suggestions.value?.[0]?.servers ?? []);
+// Сверяем id: ответ мог остаться от прошлого открытия диалога (у другого получателя),
+// и тогда его кандидаты уехали бы в привязку не тому человеку.
+const found = computed(() => {
+  const first = suggestions.value?.[0];
+
+  return first && first.recipientId === props.recipient?.id ? first : null;
+});
+
+const servers = computed(() => found.value?.servers ?? []);
 
 const description = computed(() => (
   props.recipient
@@ -215,19 +223,22 @@ const summary = computed(() => {
     return '';
   }
 
-  if (!suggestions.value) {
+  // Именно по `found`, а не по `suggestions`: ответ от прошлого получателя мы не
+  // показываем, и утверждать «похожих нет» в этом случае нельзя — мы ещё не искали.
+  if (!found.value) {
     return 'Нажмите «Искать».';
   }
 
-  const found = servers.value.filter((server) => server.candidates.length).length;
+  const withMatches = servers.value.filter((server) => server.candidates.length).length;
 
-  if (!found) {
+  if (!withMatches) {
     return 'Ни на одной панели похожих клиентов нет.';
   }
 
   return totalChecked.value
     ? `Отмечено ${totalChecked.value} — столько конфигов и привяжется.`
-    : `Есть совпадения на ${found} ${found === 1 ? 'панели' : 'панелях'}. Отметьте нужные.`;
+    : `Есть совпадения на ${withMatches} ${withMatches === 1 ? 'панели' : 'панелях'}. `
+      + 'Отметьте нужные.';
 });
 
 const isBindDisabled = computed(() => isBinding.value || isSearching.value || !totalChecked.value);

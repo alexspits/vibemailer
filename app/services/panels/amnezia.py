@@ -45,7 +45,7 @@ class AmneziaPanel(BasePanel):
                 f"Панель {self.server.title} ответила {response.status}: {response.body[:200]}"
             )
 
-        return response.json()
+        return self._json(response, self.server.title)
 
     @staticmethod
     def _pick_single_server(servers: object) -> str:
