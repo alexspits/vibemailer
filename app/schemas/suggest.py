@@ -28,6 +28,10 @@ class ClientCandidate(BaseModel):
     suggested: bool = False
     # Кем в кампании клиент уже занят; None — свободен.
     taken_by: str | None = None
+    # Откуда кандидат: `history` — этому же адресу его привязывали в прошлой рассылке,
+    # `match` — подобран по похожести имени. Первое не догадка, а факт, и в интерфейсе
+    # должно выглядеть иначе.
+    source: str = "match"
 
 
 class ServerSuggestion(BaseModel):

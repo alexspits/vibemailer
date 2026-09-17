@@ -108,14 +108,8 @@
               <span :class="$style.clientName">{{ candidate.name }}</span>
 
               <span
-                v-if="candidate.takenBy"
                 :class="$style.note"
-              >занят {{ candidate.takenBy }}</span>
-
-              <span
-                v-else
-                :class="$style.note"
-              >{{ confidenceLabel(candidate.score) }}</span>
+              >{{ candidateNote(candidate) }}</span>
             </button>
           </div>
         </div>
@@ -163,6 +157,7 @@ import {
 import useBindSuggested from '@/composables/data/useBindSuggested';
 import useSuggestClients from '@/composables/data/useSuggestClients';
 import useToast from '@/composables/useToast';
+import type { ClientSuggestion } from '@/apiService/campaigns/campaignsApiTypes';
 import type { Recipient } from '@/apiService/recipients/recipientsApiTypes';
 
 interface Props {
@@ -257,13 +252,29 @@ const summary = computed(() => {
 
 const isBindDisabled = computed(() => isBinding.value || isSearching.value || !totalChecked.value);
 
-/** Словами, а не числом: точность подбора — не та величина, которую стоит показывать. */
-function confidenceLabel(score: number): string {
-  if (score >= 0.85) {
+/**
+ * Подпись справа от имени клиента.
+ *
+ * Кандидат из прошлой рассылки — не догадка, а факт: этому адресу его уже отдавали.
+ * Точность подбора показываем словами, а не числом: доля совпавших букв человеку
+ * ничего не говорит, а видимость точности создаёт.
+ */
+function candidateNote(candidate: ClientSuggestion): string {
+  if (candidate.takenBy) {
+    return candidate.takenBy === props.recipient?.email
+      ? 'уже у него в этой рассылке'
+      : `занят ${candidate.takenBy}`;
+  }
+
+  if (candidate.source === 'history') {
+    return 'был у него в прошлой рассылке';
+  }
+
+  if (candidate.score >= 0.85) {
     return 'очень похоже';
   }
 
-  return score >= 0.7 ? 'похоже' : 'возможно';
+  return candidate.score >= 0.7 ? 'похоже' : 'возможно';
 }
 
 function isChecked(serverKey: string, name: string): boolean {

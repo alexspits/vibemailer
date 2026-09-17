@@ -74,6 +74,8 @@ export interface ClientSuggestion {
   score: number;
   suggested: boolean;
   takenBy: string | null;
+  /** `history` — этому адресу его уже привязывали, `match` — подобран по имени. */
+  source: 'history' | 'match';
 }
 
 export interface ServerSuggestion {
@@ -89,6 +91,15 @@ export interface RecipientSuggestion {
   clientName: string;
   servers: ServerSuggestion[];
 }
+
+export interface CloneCampaignInput {
+  id: number;
+  name: string;
+  subject?: string;
+  body?: string;
+}
+
+export type CloneCampaignRequestWire = components['schemas']['CloneCampaign'];
 
 export type SuggestClientsRequestWire = components['schemas']['SuggestClientsIn'];
 export type SuggestClientsResponseWire = components['schemas']['SuggestResultEnvelope'];

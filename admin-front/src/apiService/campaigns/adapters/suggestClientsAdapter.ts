@@ -32,6 +32,7 @@ const suggestClientsAdapter = {
           score: candidate.score,
           suggested: candidate.suggested ?? false,
           takenBy: candidate.taken_by ?? null,
+          source: candidate.source === 'history' ? 'history' : 'match',
         })),
       })),
     }));

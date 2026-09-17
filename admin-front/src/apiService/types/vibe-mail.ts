@@ -216,6 +216,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/campaigns/{campaign_id}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clone Campaign
+         * @description Создаёт кампанию по образцу прежней: те же получатели и те же привязки.
+         *
+         *     Конфиги копируются пустыми — их заберёт генерация. Новых людей добавляют обычным
+         *     импортом уже в новую кампанию.
+         */
+        post: operations["clone_campaign_api_campaigns__campaign_id__clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recipients/{recipient_id}": {
         parameters: {
             query?: never;
@@ -547,6 +570,26 @@ export interface components {
             suggested: boolean;
             /** Taken By */
             taken_by?: string | null;
+            /**
+             * Source
+             * @default match
+             */
+            source: string;
+        };
+        /**
+         * CloneCampaign
+         * @description Тело запроса на создание кампании по образцу прежней.
+         *
+         *     Тема и текст по умолчанию берутся у исходной: чаще всего новая рассылка — это та
+         *     же самая, но с добавленными людьми.
+         */
+        CloneCampaign: {
+            /** Name */
+            name: string;
+            /** Subject */
+            subject?: string | null;
+            /** Body */
+            body?: string | null;
         };
         /**
          * ConfigRead
@@ -1530,6 +1573,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BindSuggestionsEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clone_campaign_api_campaigns__campaign_id__clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneCampaign"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignReadEnvelope"];
                 };
             };
             /** @description Validation Error */

@@ -40,6 +40,10 @@ log = logging.getLogger("vibe_mail.suggest")
 # тяжелее, чем искать руками.
 MAX_CANDIDATES = 6
 
+# Кандидат из прошлой рассылки — не догадка: этому адресу этот клиент уже доставался.
+HISTORY_SOURCE = "history"
+MATCH_SOURCE = "match"
+
 
 def _panel_names(server: ServerConfig) -> tuple[list[str], str | None]:
     """Имена клиентов панели и текст ошибки, если она не ответила."""
@@ -51,6 +55,41 @@ def _panel_names(server: ServerConfig) -> tuple[list[str], str | None]:
         reason = str(getattr(exc, "detail", exc))
         log.warning("Подбор: панель %s не ответила: %s", server.key, reason)
         return [], reason
+
+
+def _past_bindings(
+    db: Session, campaign_id: int, emails: set[str]
+) -> dict[str, set[tuple[str, str]]]:
+    """Что этим адресам уже доставалось в прошлых рассылках.
+
+    Привязки между кампаниями не наследуются: `external_name` живёт на строке конфига,
+    а строка принадлежит получателю конкретной кампании. Но история в базе есть, и она
+    точнее любого подбора по имени — человеку уже отдавали именно этого клиента.
+
+    Берём `panel_name`, а не только `external_name`: если в прошлый раз конфиг не
+    привязывали, человеку всё равно завели клиента под производным именем, и вернуть
+    ему тот же доступ — то же самое действие.
+    """
+    if not emails:
+        return {}
+
+    rows = (
+        db.query(Config)
+        .join(Recipient, Config.recipient_id == Recipient.id)
+        .options(joinedload(Config.recipient))
+        .filter(Recipient.email.in_(emails), Recipient.campaign_id != campaign_id)
+        .order_by(Config.id.desc())
+        .all()
+    )
+
+    history: dict[str, set[tuple[str, str]]] = {}
+
+    for config in rows:
+        history.setdefault(config.recipient.email, set()).add(
+            (config.server_key, config.panel_name)
+        )
+
+    return history
 
 
 def _taken_names(db: Session, campaign_id: int) -> dict[tuple[str, str], str]:
@@ -82,6 +121,7 @@ def _for_recipient(
     hint: str,
     panels: list[tuple[ServerConfig, list[str], str | None]],
     taken: dict[tuple[str, str], str],
+    history: set[tuple[str, str]],
 ) -> RecipientSuggestion:
     """Подбор по всем серверам для одного получателя."""
     # Почта — главный признак: это адрес самого человека. Базовое имя слабее, в нём
@@ -92,17 +132,35 @@ def _for_recipient(
     servers = []
 
     for server, names, error in panels:
-        found = matcher.match(strong, weak, names, _stop_words(server))[:MAX_CANDIDATES]
+        live = set(names)
+        # Прошлые привязки — вперёд и только те, что на панели ещё живы: предлагать
+        # привязку к исчезнувшему клиенту значит обещать то, чего не будет.
+        from_history = [name for key, name in sorted(history) if key == server.key and name in live]
+
+        found = matcher.match(strong, weak, names, _stop_words(server))
+        rest = [c for c in found if c.name not in set(from_history)]
 
         candidates = [
+            ClientCandidate(
+                name=name,
+                score=1.0,
+                suggested=(server.key, name) not in taken,
+                taken_by=taken.get((server.key, name)),
+                source=HISTORY_SOURCE,
+            )
+            for name in from_history
+        ]
+
+        candidates += [
             ClientCandidate(
                 name=candidate.name,
                 score=candidate.score,
                 # Занятый клиент галочку не получает: привязать его всё равно нельзя.
                 suggested=candidate.suggested and (server.key, candidate.name) not in taken,
                 taken_by=taken.get((server.key, candidate.name)),
+                source=MATCH_SOURCE,
             )
-            for candidate in found
+            for candidate in rest[:MAX_CANDIDATES]
         ]
 
         servers.append(
@@ -139,10 +197,17 @@ def suggest_clients(
 
     panels = [(server, *_panel_names(server)) for server in srv.enabled_servers()]
     taken = _taken_names(db, campaign.id)
+    history = _past_bindings(db, campaign.id, {r.email for r in recipients})
 
     return SuggestResult(
         recipients=[
-            _for_recipient(recipient, hints.get(str(recipient.id), ""), panels, taken)
+            _for_recipient(
+                recipient,
+                hints.get(str(recipient.id), ""),
+                panels,
+                taken,
+                history.get(recipient.email, set()),
+            )
             for recipient in recipients
         ]
     )

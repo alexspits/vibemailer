@@ -58,14 +58,21 @@
                     isChecked(person.recipientId, server.serverKey, candidate.name)
                       ? $style.chipSelected : '',
                     candidate.takenBy ? $style.chipTaken : '',
+                    candidate.source === 'history' ? $style.chipHistory : '',
                   ]"
                   :disabled="Boolean(candidate.takenBy)"
-                  :title="candidate.takenBy ? `Занят ${candidate.takenBy}` : ''"
+                  :title="chipTitle(person, candidate)"
                   type="button"
                   data-test="suggest-all-chip"
                   @click="toggle(person.recipientId, server.serverKey, candidate.name)"
                 >
                   {{ candidate.name }}
+
+                  <span
+                    v-if="candidate.source === 'history' && !candidate.takenBy"
+                    :class="$style.historyMark"
+                    aria-hidden="true"
+                  >⟳</span>
                 </button>
               </div>
             </div>
@@ -132,6 +139,7 @@ import useSuggestClients from '@/composables/data/useSuggestClients';
 import useToast from '@/composables/useToast';
 import type {
   BindSuggestionItem,
+  ClientSuggestion,
   RecipientSuggestion,
   ServerSuggestion,
 } from '@/apiService/campaigns/campaignsApiTypes';
@@ -203,6 +211,19 @@ const summary = computed(() => {
 });
 
 const isBindDisabled = computed(() => isBinding.value || isSearching.value || !totalChecked.value);
+
+/** Подсказка к чипу: откуда он взялся или кем занят. */
+function chipTitle(person: RecipientSuggestion, candidate: ClientSuggestion): string {
+  if (candidate.takenBy) {
+    return candidate.takenBy === person.email
+      ? 'Уже привязан к нему в этой рассылке'
+      : `Занят ${candidate.takenBy}`;
+  }
+
+  return candidate.source === 'history'
+    ? 'Был привязан к этому адресу в прошлой рассылке'
+    : 'Подобран по похожести имени';
+}
 
 function withCandidates(person: RecipientSuggestion): ServerSuggestion[] {
   return person.servers.filter((server) => server.candidates.length);
@@ -366,6 +387,16 @@ watch(isOpen, (opened) => {
   border-color: var(--primary);
   color: var(--primary-foreground);
   font-weight: 500;
+}
+
+/* Из истории — подчёркнуто: это не догадка, а факт из прошлой рассылки. */
+.chipHistory {
+  border-style: dashed;
+  border-color: var(--primary);
+}
+
+.historyMark {
+  opacity: 0.7;
 }
 
 .chipTaken {

@@ -5,6 +5,7 @@ import deleteCampaignAdapter from './adapters/deleteCampaignAdapter';
 import generateConfigsAdapter from './adapters/generateConfigsAdapter';
 import startCampaignAdapter from './adapters/startCampaignAdapter';
 import bindSuggestionsAdapter from './adapters/bindSuggestionsAdapter';
+import cloneCampaignAdapter from './adapters/cloneCampaignAdapter';
 import retryFailedAdapter from './adapters/retryFailedAdapter';
 import suggestClientsAdapter from './adapters/suggestClientsAdapter';
 import stopCampaignAdapter from './adapters/stopCampaignAdapter';
@@ -24,6 +25,7 @@ import type {
   StartCampaignInput,
   StartCampaignResponseWire,
   BindSuggestionsInput,
+  CloneCampaignInput,
   BindSuggestionsResponseWire,
   BindSuggestionsSummary,
   RecipientSuggestion,
@@ -92,6 +94,22 @@ export const campaignsApiService = {
     }
 
     return campaignId;
+  },
+
+  cloneCampaign: async (input: CloneCampaignInput): Promise<Campaign> => {
+    const response = await request<GetCampaignResponseWire>(
+      'POST',
+      `/campaigns/${input.id}/clone`,
+      cloneCampaignAdapter.adaptParams(input),
+    );
+
+    const campaign = cloneCampaignAdapter.adaptResponseData(response);
+
+    if (!campaign) {
+      throw new Error('Не удалось создать кампанию на основе прежней');
+    }
+
+    return campaign;
   },
 
   suggestClients: async (input: SuggestClientsInput): Promise<RecipientSuggestion[]> => {

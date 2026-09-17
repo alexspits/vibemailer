@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.db.models import CampaignStatus
-from app.schemas.campaign import CampaignRead, CreateCampaign, MessageOut
+from app.schemas.campaign import CampaignRead, CloneCampaign, CreateCampaign, MessageOut
 from app.schemas.envelope import (
     BindSuggestionsEnvelope,
     CampaignReadEnvelope,
@@ -190,3 +190,19 @@ def bind_suggestions(campaign_id: int, payload: BindSuggestionsIn, db: Session =
     bound, recipients = cfs.bind_suggestions(db, campaign_id, payload.items)
 
     return ok(BindSuggestionsResult(bound=bound, recipients=recipients))
+
+
+@router.post(
+    "/{campaign_id}/clone",
+    status_code=status.HTTP_201_CREATED,
+    response_model=CampaignReadEnvelope,
+)
+def clone_campaign(campaign_id: int, payload: CloneCampaign, db: Session = Depends(get_db)):
+    """Создаёт кампанию по образцу прежней: те же получатели и те же привязки.
+
+    Конфиги копируются пустыми — их заберёт генерация. Новых людей добавляют обычным
+    импортом уже в новую кампанию.
+    """
+    campaign = cs.clone_campaign(db, campaign_id, payload)
+
+    return ok(CampaignRead.model_validate(campaign))

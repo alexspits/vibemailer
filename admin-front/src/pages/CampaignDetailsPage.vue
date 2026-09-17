@@ -56,6 +56,27 @@
         </Button>
 
         <Button
+          v-if="recipientsList.length"
+          :disabled="isCloning"
+          variant="outline"
+          title="Новая рассылка с этими же получателями и привязками — добавите новых людей импортом"
+          data-test="clone-campaign-button"
+          @click="onClone"
+        >
+          <LoaderCircle
+            v-if="isCloning"
+            :class="$style.spinner"
+          />
+
+          <Copy
+            v-else
+            :class="$style.iconBtn"
+          />
+
+          Создать на основе
+        </Button>
+
+        <Button
           v-for="server in serversList"
           :key="server.key"
           :disabled="isServerGenerateDisabled(server.key)"
@@ -507,6 +528,7 @@ import SuggestAllDialog from '@/components/SuggestAllDialog.vue';
 import SuggestClientsDialog from '@/components/SuggestClientsDialog.vue';
 import BindConfigDialog from '@/components/BindConfigDialog.vue';
 import { API_BASE_URL } from '@/apiService/httpClient';
+import useCloneCampaign from '@/composables/data/useCloneCampaign';
 import useDeleteConfig from '@/composables/data/useDeleteConfig';
 import useGenerateConfigs from '@/composables/data/useGenerateConfigs';
 import useGetCampaign from '@/composables/data/useGetCampaign';
@@ -740,6 +762,33 @@ function openAddConfigs(recipient: Recipient) {
   isAddConfigsOpen.value = true;
 }
 
+const {
+  isLoading: isCloning,
+  campaign: clonedCampaign,
+  cloneCampaign,
+  onDone: onCloneDone,
+} = useCloneCampaign();
+
+// Имя спрашиваем сразу: кампании различают по нему, и «Копия копии» через месяц
+// ничего не скажет. Остальное — тема и текст — наследуется и правится потом.
+function onClone() {
+  const suggested = `${campaign.value?.name ?? 'Рассылка'} — продолжение`;
+  const name = window.prompt('Название новой рассылки', suggested);
+
+  if (name?.trim()) {
+    cloneCampaign({ id: campaignId.value, name: name.trim() });
+  }
+}
+
+onCloneDone(() => {
+  const created = clonedCampaign.value;
+
+  if (created) {
+    toast.success('Создана на основе этой — получатели и привязки перенесены');
+    router.push({ name: 'campaign-details', params: { id: created.id } });
+  }
+});
+
 const isSuggestAllOpen = ref(false);
 
 const isSuggestOpen = ref(false);
@@ -959,6 +1008,14 @@ watch(
 
 onMounted(() => {
   getServers();
+  load();
+});
+
+// Переход с кампании на кампанию переиспользует этот же компонент: `onMounted` больше
+// не сработает, и страница осталась бы с прежними данными. Раньше такого перехода в
+// интерфейсе не было, а с кнопкой «Создать на основе» он стал обычным делом.
+watch(campaignId, () => {
+  stopPolling();
   load();
 });
 onUnmounted(stopPolling);

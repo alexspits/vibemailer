@@ -15,6 +15,18 @@ class CreateCampaign(BaseModel):
     body: str
 
 
+class CloneCampaign(BaseModel):
+    """Тело запроса на создание кампании по образцу прежней.
+
+    Тема и текст по умолчанию берутся у исходной: чаще всего новая рассылка — это та
+    же самая, но с добавленными людьми.
+    """
+
+    name: str
+    subject: str | None = None
+    body: str | None = None
+
+
 class CampaignRead(BaseModel):
     """Ответ: данные кампании + необязательные счётчики прогресса."""
 
