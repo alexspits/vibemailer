@@ -8,6 +8,7 @@ import recipientsListAdapter from './adapters/recipientsListAdapter';
 import type {
   AddConfigsInput,
   BindNewConfigsInput,
+  BindSuggestedInput,
   GetRecipientsInput,
   ImportPreview,
   ImportPreviewResponseWire,
@@ -78,6 +79,33 @@ export const recipientsApiService = {
     }
 
     return recipient;
+  },
+
+  /**
+   * Привязка подобранного сразу по нескольким серверам.
+   *
+   * Серверы обходятся по очереди, а не параллельно: каждый запрос читает список
+   * клиентов своей панели, и пачка одновременных заходов по SSH ничего не ускорит.
+   * Упавший сервер не отменяет уже привязанное — о нём сообщаем отдельно.
+   */
+  bindSuggested: async (input: BindSuggestedInput): Promise<Recipient> => {
+    const entries = Object.entries(input.selections).filter(([, names]) => names.length);
+
+    if (!entries.length) {
+      throw new Error('Не выбрано ни одного клиента');
+    }
+
+    let recipient: Recipient | null = null;
+
+    for (const [serverKey, names] of entries) {
+      recipient = await recipientsApiService.bindNewConfigs({
+        recipientId: input.recipientId,
+        serverKey,
+        names,
+      });
+    }
+
+    return recipient as Recipient;
   },
 
   bindNewConfigs: async (input: BindNewConfigsInput): Promise<Recipient> => {

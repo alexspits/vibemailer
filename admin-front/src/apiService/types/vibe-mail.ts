@@ -173,6 +173,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/campaigns/{campaign_id}/clients/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Clients
+         * @description Ищет на панелях клиентов, похожих на получателей. Ничего не меняет.
+         *
+         *     POST, а не GET, ради тела: подсказки для поиска задаются на каждого получателя
+         *     отдельно, а список получателей бывает длинным.
+         */
+        post: operations["suggest_clients_api_campaigns__campaign_id__clients_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recipients/{recipient_id}": {
         parameters: {
             query?: never;
@@ -439,6 +462,23 @@ export interface components {
          * @enum {string}
          */
         CampaignStatus: "new" | "in_progress" | "done" | "done_with_errors" | "error";
+        /**
+         * ClientCandidate
+         * @description Клиент панели, похожий на получателя.
+         */
+        ClientCandidate: {
+            /** Name */
+            name: string;
+            /** Score */
+            score: number;
+            /**
+             * Suggested
+             * @default false
+             */
+            suggested: boolean;
+            /** Taken By */
+            taken_by?: string | null;
+        };
         /**
          * ConfigRead
          * @description Ответ: конфиг получателя с одного сервера, без содержимого файла.
@@ -854,6 +894,23 @@ export interface components {
          */
         RecipientStatus: "pending" | "sent" | "failed";
         /**
+         * RecipientSuggestion
+         * @description Подбор для одного получателя по всем серверам.
+         */
+        RecipientSuggestion: {
+            /** Recipient Id */
+            recipient_id: number;
+            /** Email */
+            email: string;
+            /** Client Name */
+            client_name: string;
+            /**
+             * Servers
+             * @default []
+             */
+            servers: components["schemas"]["ServerSuggestion"][];
+        };
+        /**
          * RecipientsBulk
          * @description Массовое добавление получателей.
          */
@@ -882,6 +939,69 @@ export interface components {
             artifact: components["schemas"]["ArtifactKind"];
             /** Enabled */
             enabled: boolean;
+        };
+        /**
+         * ServerSuggestion
+         * @description Что нашлось для получателя на одном сервере.
+         *
+         *     `error` вместо кандидатов — панель не ответила. Это не повод валить весь подбор:
+         *     остальные серверы всё равно полезны, а привязать к недоступной панели всё равно
+         *     нельзя.
+         */
+        ServerSuggestion: {
+            /** Server Key */
+            server_key: string;
+            /** Server Title */
+            server_title: string;
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["ClientCandidate"][];
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * SuggestClientsIn
+         * @description Тело запроса на подбор.
+         *
+         *     `recipient_ids` пустой — подбираем всей кампании: панели опрашиваются один раз на
+         *     запрос, поэтому разом это дешевле, чем по одному получателю.
+         *
+         *     `hints` — подсказка для поиска, ключ строкой (id получателя), значение свободное:
+         *     фамилия или кусок имени с панели. Нужна, когда ни почта, ни базовое имя о человеке
+         *     ничего не говорят — `kboyko2022` против `boykokr` угадывается, а вот `user17` нет.
+         */
+        SuggestClientsIn: {
+            /** Recipient Ids */
+            recipient_ids?: number[] | null;
+            /** Hints */
+            hints?: {
+                [key: string]: string;
+            };
+        };
+        /** SuggestResult */
+        SuggestResult: {
+            /**
+             * Recipients
+             * @default []
+             */
+            recipients: components["schemas"]["RecipientSuggestion"][];
+        };
+        /**
+         * SuggestResultEnvelope
+         * @description Обёртка подбора клиентов панели.
+         */
+        SuggestResultEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["SuggestResult"] | null;
+            /** Error */
+            error?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1271,6 +1391,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageOutEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_clients_api_campaigns__campaign_id__clients_suggest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SuggestClientsIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestResultEnvelope"];
                 };
             };
             /** @description Validation Error */

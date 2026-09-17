@@ -19,6 +19,7 @@ from app.schemas.campaign import CampaignRead, MessageOut
 from app.schemas.import_recipients import ImportPreview, ImportResult
 from app.schemas.recipient import ConfigRead, RecipientRead
 from app.schemas.server import ServerRead
+from app.schemas.suggest import SuggestResult
 
 
 class ApiEnvelope[T](BaseModel):
@@ -68,6 +69,10 @@ class ListServerReadEnvelope(ApiEnvelope[list[ServerRead]]):
 
 class ListPanelClientsEnvelope(ApiEnvelope[list[str]]):
     """Обёртка списка имён клиентов, живущих на панели сервера."""
+
+
+class SuggestResultEnvelope(ApiEnvelope[SuggestResult]):
+    """Обёртка подбора клиентов панели."""
 
 
 class ConfigReadEnvelope(ApiEnvelope[ConfigRead]):

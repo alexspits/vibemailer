@@ -13,16 +13,19 @@ from app.schemas.envelope import (
     ListCampaignReadEnvelope,
     ListRecipientReadEnvelope,
     MessageOutEnvelope,
+    SuggestResultEnvelope,
     ok,
 )
 from app.schemas.import_recipients import RecipientsImportText
 from app.schemas.recipient import RecipientsBulk
 from app.schemas.server import GenerateConfigsIn
+from app.schemas.suggest import SuggestClientsIn
 from app.services import campaign_service as cs
 from app.services import config_service as cfs
 from app.services import import_service as imp
 from app.services import recipient_service as rs
 from app.services import server_service as srv
+from app.services import suggest_service as sug
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -158,3 +161,19 @@ def stop_campaign(campaign_id: int, db: Session = Depends(get_db)):
 def delete_campaign(campaign_id: int, db: Session = Depends(get_db)):
     cs.delete_campaign(db, campaign_id)
     return ok(MessageOut(detail="Кампания удалена", campaign_id=campaign_id))
+
+
+@router.post("/{campaign_id}/clients/suggest", response_model=SuggestResultEnvelope)
+def suggest_clients(
+    campaign_id: int,
+    payload: SuggestClientsIn | None = None,
+    db: Session = Depends(get_db),
+):
+    """Ищет на панелях клиентов, похожих на получателей. Ничего не меняет.
+
+    POST, а не GET, ради тела: подсказки для поиска задаются на каждого получателя
+    отдельно, а список получателей бывает длинным.
+    """
+    payload = payload or SuggestClientsIn()
+
+    return ok(sug.suggest_clients(db, campaign_id, payload.recipient_ids, payload.hints))

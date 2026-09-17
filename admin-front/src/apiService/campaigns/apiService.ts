@@ -5,6 +5,7 @@ import deleteCampaignAdapter from './adapters/deleteCampaignAdapter';
 import generateConfigsAdapter from './adapters/generateConfigsAdapter';
 import startCampaignAdapter from './adapters/startCampaignAdapter';
 import retryFailedAdapter from './adapters/retryFailedAdapter';
+import suggestClientsAdapter from './adapters/suggestClientsAdapter';
 import stopCampaignAdapter from './adapters/stopCampaignAdapter';
 import campaignsItemAdapter from './adapters/campaignsItemAdapter';
 import campaignsListAdapter from './adapters/campaignsListAdapter';
@@ -21,8 +22,11 @@ import type {
   ListCampaignsResponseWire,
   StartCampaignInput,
   StartCampaignResponseWire,
+  RecipientSuggestion,
   RetryFailedInput,
   RetryFailedResponseWire,
+  SuggestClientsInput,
+  SuggestClientsResponseWire,
   StopCampaignInput,
   StopCampaignResponseWire,
 } from './campaignsApiTypes';
@@ -84,6 +88,22 @@ export const campaignsApiService = {
     }
 
     return campaignId;
+  },
+
+  suggestClients: async (input: SuggestClientsInput): Promise<RecipientSuggestion[]> => {
+    const response = await request<SuggestClientsResponseWire>(
+      'POST',
+      `/campaigns/${input.id}/clients/suggest`,
+      suggestClientsAdapter.adaptParams(input),
+    );
+
+    const suggestions = suggestClientsAdapter.adaptResponseData(response);
+
+    if (!suggestions) {
+      throw new Error('Не удалось подобрать клиентов');
+    }
+
+    return suggestions;
   },
 
   retryFailed: async (input: RetryFailedInput): Promise<number> => {

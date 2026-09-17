@@ -386,17 +386,31 @@
 
                 <span v-if="recipient.configs.length === 0">—</span>
 
-                <button
-                  :class="$style.addConfigButton"
-                  title="Добавить получателю ещё конфиги"
-                  type="button"
-                  data-test="recipient-add-configs"
-                  @click="openAddConfigs(recipient)"
-                >
-                  <Plus :class="$style.iconBtn" />
+                <div :class="$style.recipientActions">
+                  <button
+                    :class="$style.addConfigButton"
+                    title="Добавить получателю ещё конфиги"
+                    type="button"
+                    data-test="recipient-add-configs"
+                    @click="openAddConfigs(recipient)"
+                  >
+                    <Plus :class="$style.iconBtn" />
 
-                  Добавить конфиг
-                </button>
+                    Добавить конфиг
+                  </button>
+
+                  <button
+                    :class="$style.addConfigButton"
+                    title="Поискать этого человека на всех панелях и привязать найденное"
+                    type="button"
+                    data-test="recipient-suggest-clients"
+                    @click="openSuggest(recipient)"
+                  >
+                    <Wand :class="$style.iconBtn" />
+
+                    Найти на панелях
+                  </button>
+                </div>
               </TableCell>
             </TableRow>
           </template>
@@ -424,6 +438,13 @@
       :recipient="addConfigsTarget"
       @added="load"
     />
+
+    <SuggestClientsDialog
+      v-model:open="isSuggestOpen"
+      :campaign-id="campaignId"
+      :recipient="suggestTarget"
+      @bound="load"
+    />
   </section>
 </template>
 
@@ -431,7 +452,16 @@
 import { computed, onMounted, onUnmounted, ref, watch, useCssModule } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { ArrowLeft, Copy, Download, Link2, LoaderCircle, Plus, Trash2 } from '@lucide/vue';
+import {
+  ArrowLeft,
+  Copy,
+  Download,
+  Link2,
+  LoaderCircle,
+  Plus,
+  Trash2,
+  Wand,
+} from '@lucide/vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -452,6 +482,7 @@ import {
 } from '@/components/ui/tooltip';
 import AddRecipientsDialog from '@/components/AddRecipientsDialog.vue';
 import AddConfigsDialog from '@/components/AddConfigsDialog.vue';
+import SuggestClientsDialog from '@/components/SuggestClientsDialog.vue';
 import BindConfigDialog from '@/components/BindConfigDialog.vue';
 import { API_BASE_URL } from '@/apiService/httpClient';
 import useDeleteConfig from '@/composables/data/useDeleteConfig';
@@ -663,6 +694,14 @@ const addConfigsTarget = ref<Recipient | null>(null);
 function openAddConfigs(recipient: Recipient) {
   addConfigsTarget.value = recipient;
   isAddConfigsOpen.value = true;
+}
+
+const isSuggestOpen = ref(false);
+const suggestTarget = ref<Recipient | null>(null);
+
+function openSuggest(recipient: Recipient) {
+  suggestTarget.value = recipient;
+  isSuggestOpen.value = true;
 }
 
 async function copyLink(link: string) {
@@ -1140,6 +1179,12 @@ function formatDate(value: string): string {
 .skConfigs {
   height: 1rem;
   width: 8rem;
+}
+
+.recipientActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .addConfigButton {

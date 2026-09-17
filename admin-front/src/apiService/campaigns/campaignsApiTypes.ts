@@ -61,6 +61,38 @@ export interface RetryFailedInput {
 
 export type RetryFailedResponseWire = components['schemas']['MessageOutEnvelope'];
 
+export interface SuggestClientsInput {
+  id: number;
+  /** Пусто — подбираем всей кампании: панели опрашиваются один раз на запрос. */
+  recipientIds?: number[];
+  /** id получателя строкой → подсказка для поиска. */
+  hints?: Record<string, string>;
+}
+
+export interface ClientSuggestion {
+  name: string;
+  score: number;
+  suggested: boolean;
+  takenBy: string | null;
+}
+
+export interface ServerSuggestion {
+  serverKey: string;
+  serverTitle: string;
+  candidates: ClientSuggestion[];
+  error: string | null;
+}
+
+export interface RecipientSuggestion {
+  recipientId: number;
+  email: string;
+  clientName: string;
+  servers: ServerSuggestion[];
+}
+
+export type SuggestClientsRequestWire = components['schemas']['SuggestClientsIn'];
+export type SuggestClientsResponseWire = components['schemas']['SuggestResultEnvelope'];
+
 export interface GenerateConfigsInput {
   id: number;
   /** Ключи серверов; пусто — все включённые («Сгенерировать все»). */

@@ -108,6 +108,12 @@ export interface BindNewConfigsInput {
   names: string[];
 }
 
+export interface BindSuggestedInput {
+  recipientId: number;
+  /** Ключ сервера → имена клиентов панели, отмеченные к привязке. */
+  selections: Record<string, string[]>;
+}
+
 export type RecipientReadWire = components['schemas']['RecipientRead'];
 export type RecipientResponseWire = components['schemas']['RecipientReadEnvelope'];
 export type ConfigsAddWire = components['schemas']['ConfigsAdd'];
