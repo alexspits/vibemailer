@@ -18,7 +18,7 @@
             v-model="hint"
             placeholder="Подсказка: фамилия или кусок имени с панели"
             data-test="suggest-hint-input"
-            @keyup.enter="search"
+            @keyup.enter="!isSearching && search()"
           />
 
           <Button
@@ -45,6 +45,15 @@
           :class="$style.hint"
         >
           Читаем списки клиентов со всех панелей…
+        </p>
+
+        <p
+          v-else-if="failed"
+          :class="$style.serverError"
+          data-test="suggest-failed"
+        >
+          Подбор не удался — списки клиентов прочитать не смогли. Это не «никого не
+          нашлось»: повторите поиск позже.
         </p>
 
         <div
@@ -171,6 +180,7 @@ const toast = useToast();
 
 const {
   isLoading: isSearching,
+  hasError: failed,
   suggestions,
   suggestClients,
   onDone: onSearchDone,
@@ -225,6 +235,10 @@ const summary = computed(() => {
 
   // Именно по `found`, а не по `suggestions`: ответ от прошлого получателя мы не
   // показываем, и утверждать «похожих нет» в этом случае нельзя — мы ещё не искали.
+  if (failed.value) {
+    return '';
+  }
+
   if (!found.value) {
     return 'Нажмите «Искать».';
   }
@@ -299,13 +313,25 @@ function onBind(): void {
 }
 
 // Галочки расставляет подбор: уверенные совпадения отмечены заранее, остальные — нет.
+// Галочки: к уже отмеченному руками добавляем уверенные совпадения нового поиска.
+// Затирать ручной выбор нельзя — человек мог отметить кандидатов, а потом уточнить
+// подсказку, и его работа пропала бы.
 onSearchDone(() => {
   const next: Record<string, Set<string>> = {};
 
   for (const server of servers.value) {
-    next[server.serverKey] = new Set(
-      server.candidates.filter((candidate) => candidate.suggested).map((c) => c.name),
-    );
+    const names = new Set(checked.value[server.serverKey] ?? []);
+    const available = new Set(server.candidates.map((candidate) => candidate.name));
+
+    for (const candidate of server.candidates) {
+      if (candidate.suggested) {
+        names.add(candidate.name);
+      }
+    }
+
+    // Отмеченное, которого в новой выдаче нет, отбрасываем: привязать его всё равно
+    // нечем — бэкенд проверяет имена по живой панели.
+    next[server.serverKey] = new Set([...names].filter((name) => available.has(name)));
   }
 
   checked.value = next;

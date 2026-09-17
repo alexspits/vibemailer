@@ -94,6 +94,9 @@ onDone(() => {
 onError(() => {
   isInitialLoading.value = false;
   pollInFlight = false;
+  // Иначе опрос продолжает бить каждые три секунды и сыпать тостами: условие запуска
+  // считается по данным, которых после ошибки уже нет.
+  syncPolling();
 });
 
 onMounted(load);

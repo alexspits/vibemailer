@@ -279,14 +279,18 @@ class MailSender:
         msg = self._build_message(campaign, recipient, configs)
         last_exc: Exception | None = None
 
-        for attempt in range(1, self.settings.RETRIES + 1):
+        # Хотя бы одна попытка: RETRIES=0 в .env означает «без повторов», а не
+        # «не отправлять» — иначе рассылка молча пометила бы всех неудачными.
+        attempts = max(int(self.settings.RETRIES), 1)
+
+        for attempt in range(1, attempts + 1):
             try:
                 self._send_once(msg)
             except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused) as exc:
                 return (False, str(exc))
             except Exception as exc:  # noqa: BLE001 - развилка по типу ниже
                 last_exc = exc
-                if not self._is_temporary(exc) or attempt == self.settings.RETRIES:
+                if not self._is_temporary(exc) or attempt == attempts:
                     return (False, str(exc))
                 self._wait_before_retry(exc, attempt)
             else:

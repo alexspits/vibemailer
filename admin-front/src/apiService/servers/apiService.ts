@@ -18,10 +18,16 @@ export const serversApiService = {
   getPanelClients: async (input: GetPanelClientsInput): Promise<string[]> => {
     const response = await request<ListPanelClientsResponseWire>(
       'GET',
-      `/servers/${input.serverKey}/clients`,
+      `/servers/${encodeURIComponent(input.serverKey)}/clients`,
     );
 
-    return response.status === 'success' && response.result ? response.result : [];
+    if (response.status !== 'success' || !response.result) {
+      // Не пустой список: «на панели никого нет» и «не смогли прочитать» — разные
+      // вещи, и на втором человек заводит клиентов заново.
+      throw new Error('Не удалось прочитать список клиентов с панели');
+    }
+
+    return response.result;
   },
 };
 

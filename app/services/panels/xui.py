@@ -115,9 +115,7 @@ class XuiPanel(BasePanel):
         )
 
         if not response.is_ok:
-            raise PanelError(
-                f"Панель {self.server.title} не пустила: {response.status} {response.body[:200]}"
-            )
+            raise PanelError(f"Панель {self.server.title} не пустила: {self._describe(response)}")
 
         payload = self._json(response, self.server.title)
         if isinstance(payload, dict) and not payload.get("success", True):
@@ -141,17 +139,15 @@ class XuiPanel(BasePanel):
         response = self._call(method, path, json_body)
 
         if not response.is_ok:
-            raise PanelError(
-                f"Панель {self.server.title} ответила {response.status}: {response.body[:200]}"
-            )
+            raise PanelError(f"Панель {self.server.title} ответила: {self._describe(response)}")
 
         payload = self._json(response, self.server.title)
 
         if not isinstance(payload, dict):
-            raise PanelError(f"Панель вернула неожиданный ответ: {response.body[:200]}")
+            raise PanelError(f"Панель вернула неожиданный ответ: {self._describe(response)}")
 
         if not payload.get("success", False):
-            raise PanelError(f"Панель отказала: {payload.get('msg') or response.body[:200]}")
+            raise PanelError(f"Панель отказала: {payload.get('msg') or self._describe(response)}")
 
         return payload.get("obj")
 
@@ -448,7 +444,7 @@ class XuiPanel(BasePanel):
                 sub_id,
             )
 
-        return Artifact.url(f"{self._subscription_base()}{quote(sub_id)}")
+        return Artifact.url(f"{self._subscription_base()}{quote(sub_id, safe='')}")
 
     def _existing_sub_id(self, name: str) -> str | None:
         """subId клиента по имени; None — такого клиента на панели нет."""

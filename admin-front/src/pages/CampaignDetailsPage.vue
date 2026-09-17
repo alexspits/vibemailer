@@ -386,11 +386,14 @@
 
                   <button
                     :class="$style.copyButton"
-                    :disabled="isDeletingConfig"
-                    title="Удалить эту строку конфига. Клиент на панели останется."
+                    :disabled="deletingConfigId === config.id"
+                    :title="config.status === 'ready'
+                      ? 'Удалить строку конфига. Выданный доступ пропадёт из письма, '
+                        + 'клиент на панели останется.'
+                      : 'Удалить эту строку конфига. Клиент на панели останется.'"
                     type="button"
                     data-test="config-delete-button"
-                    @click="onDeleteConfig(config)"
+                    @click="onDeleteConfig(recipient, config)"
                   >
                     <Trash2 :class="$style.iconBtn" />
                   </button>
@@ -693,18 +696,40 @@ function openBind(recipient: Recipient, config: Config) {
 }
 
 const {
-  isLoading: isDeletingConfig,
   deleteConfig,
   onDone: onDeleteConfigDone,
+  onError: onDeleteConfigError,
 } = useDeleteConfig();
 
-function onDeleteConfig(config: Config) {
+// Какую именно строку удаляем: общий флаг гасил кнопки удаления у всех конфигов
+// всех получателей сразу.
+const deletingConfigId = ref<number | null>(null);
+
+// Готовый конфиг спрашиваем: в нём лежит уже выданный доступ, и восстановить строку
+// удалением не получится — придётся заводить и генерировать заново. Пустую строку
+// удаляем молча, она ничего не стоит.
+function onDeleteConfig(recipient: Recipient, config: Config) {
+  const isReady = config.status === 'ready';
+
+  if (isReady && !window.confirm(
+    `Удалить конфиг ${config.name} у ${recipient.email}? `
+    + 'Выданный доступ пропадёт из письма, клиент на панели останется.',
+  )) {
+    return;
+  }
+
+  deletingConfigId.value = config.id;
   deleteConfig({ configId: config.id });
 }
 
 onDeleteConfigDone(() => {
+  deletingConfigId.value = null;
   toast.success('Конфиг удалён');
   load();
+});
+
+onDeleteConfigError(() => {
+  deletingConfigId.value = null;
 });
 
 const isAddConfigsOpen = ref(false);

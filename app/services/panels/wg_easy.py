@@ -51,9 +51,7 @@ class WgEasyPanel(BasePanel):
             )
 
         if not response.is_ok:
-            raise PanelError(
-                f"Панель {self.server.title} ответила {response.status}: {response.body[:200]}"
-            )
+            raise PanelError(f"Панель {self.server.title} ответила: {self._describe(response)}")
 
         return response
 

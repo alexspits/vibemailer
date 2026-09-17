@@ -17,12 +17,15 @@ import argparse
 
 from app.db.models import Config, ConfigStatus, Recipient
 from app.db.session import SessionLocal
+from app.services import server_service as srv
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("campaign_id", type=int, help="id кампании")
-    parser.add_argument("--server", nargs="*", default=None, help="только эти ключи серверов")
+    # nargs="+", а не "*": с "*" вызов `--server` без значений давал пустой список,
+    # проверка на него не срабатывала, и сбрасывалась вся кампания вместо ничего.
+    parser.add_argument("--server", nargs="+", help="только эти ключи серверов")
     args = parser.parse_args()
 
     db = SessionLocal()
@@ -34,6 +37,16 @@ def main() -> int:
         )
         if args.server:
             query = query.filter(Config.server_key.in_(args.server))
+
+        if args.server:
+            known = set(srv.enabled_keys())
+            unknown = [key for key in args.server if key not in known]
+
+            if unknown:
+                print(
+                    f"Неизвестные серверы: {', '.join(unknown)}. Известные: {', '.join(sorted(known))}"
+                )
+                return 1
 
         configs = query.all()
         for config in configs:

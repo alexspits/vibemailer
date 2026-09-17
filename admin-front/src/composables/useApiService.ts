@@ -8,6 +8,9 @@ interface UseApiServiceOptions {
 export interface UseApiServiceResult<T, V extends unknown[] = []> {
   isLoading: Ref<boolean>;
   data: Ref<T | null>;
+  /** Последний вызов закончился ошибкой. Нужен, чтобы «не смогли прочитать» не
+   *  выглядело как «ничего не нашлось»: на втором человек заводит клиентов заново. */
+  hasError: Ref<boolean>;
   execute: (...args: V) => void;
   onDone: (cb: () => void) => void;
   onError: (cb: () => void) => void;
@@ -19,6 +22,7 @@ export default function useApiService<T, V extends unknown[] = []>(
 ): UseApiServiceResult<T, V> {
   const isLoading = ref<boolean>(false);
   const data: Ref<T | null> = ref(null);
+  const hasError = ref<boolean>(false);
 
   let onDoneCb: (() => void) | undefined;
   let onErrorCb: (() => void) | undefined;
@@ -33,6 +37,7 @@ export default function useApiService<T, V extends unknown[] = []>(
 
   const execute = async (...args: V) => {
     isLoading.value = true;
+    hasError.value = false;
 
     try {
       const response = await apiServiceMethod(...args);
@@ -48,6 +53,7 @@ export default function useApiService<T, V extends unknown[] = []>(
       // Данные прошлого вызова стираем: иначе диалог, открытый для другого получателя
       // или сервера, покажет то, что нашлось в прошлый раз, и человек привяжет чужое.
       data.value = null;
+      hasError.value = true;
 
       if (options?.errorMessage) {
         // Текст от бэкенда дописываем: он конкретный («Неизвестные серверы: de2»),
@@ -68,6 +74,7 @@ export default function useApiService<T, V extends unknown[] = []>(
   return {
     isLoading,
     data,
+    hasError,
     execute,
     onDone,
     onError,

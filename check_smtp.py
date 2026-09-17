@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import argparse
-import smtplib
+import contextlib
 import sys
 from email.message import EmailMessage
 
@@ -76,18 +76,26 @@ def main() -> int:
     try:
         print("  вход выполнен")
         limit = smtp.esmtp_features.get("size")
-        if limit:
+        # Значение приходит от сервера, поэтому не доверяем ему на слово: нечисловой
+        # SIZE уронил бы проверку трейсбеком на ровном месте.
+        if limit and str(limit).strip().isdigit():
             print(f"  предельный размер письма: {int(limit) // 1024} КБ")
 
         if args.to:
             try:
                 smtp.send_message(_test_message(settings, args.to))
-            except smtplib.SMTPException as exc:
+            except Exception as exc:  # noqa: BLE001 - сетевые сбои тоже надо показать
                 print(f"  ОШИБКА отправки: {exc}")
+                advice = _hint(str(exc))
+                if advice:
+                    print(f"  ПОДСКАЗКА: {advice}")
                 return 1
             print(f"  письмо отправлено на {args.to} — проверьте ящик")
     finally:
-        smtp.quit()
+        # Закрытие не должно подменить собой исходную ошибку: сервер мог уже оборвать
+        # соединение, и тогда quit() бросит своё исключение поверх интересного.
+        with contextlib.suppress(Exception):
+            smtp.quit()
 
     return 0
 

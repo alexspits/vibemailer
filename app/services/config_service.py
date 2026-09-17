@@ -1,7 +1,7 @@
 """Работа с конфигами получателей: постановка в очередь на генерацию, доступ к файлу."""
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.servers import ServerConfig
 from app.db.models import Config, ConfigStatus, Recipient
@@ -116,7 +116,7 @@ def bind_new_clients(
     через SSH каждый такой запрос — отдельная команда на машине.
     """
     recipient = rs.get_recipient(db, recipient_id)
-    server = srv.get_server(server_key)
+    server = srv.get_enabled_server(server_key)
 
     wanted = list(dict.fromkeys(name.strip() for name in names if name.strip()))
 
@@ -197,7 +197,7 @@ def bind_suggestions(db: Session, campaign_id: int, items: list) -> tuple[int, i
     # получил бы один и тот же доступ двумя вложениями.
     merged = _merge_items(items)
 
-    servers = {key: srv.get_server(key) for _, key in merged}
+    servers = {key: srv.get_enabled_server(key) for _, key in merged}
     live = {key: set(srv.list_panel_clients(key)) for key in servers}
 
     _reject_unknown_names(merged, live)
@@ -277,6 +277,7 @@ def _reject_taken_names(
     rivals = (
         db.query(Config)
         .join(Recipient, Config.recipient_id == Recipient.id)
+        .options(joinedload(Config.recipient))
         .filter(
             Config.server_key == server_key,
             Recipient.campaign_id == recipient.campaign_id,

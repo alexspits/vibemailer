@@ -35,6 +35,15 @@
         </p>
 
         <p
+          v-else-if="failed"
+          :class="$style.failed"
+          data-test="bind-failed"
+        >
+          Не удалось прочитать список клиентов с панели. Это не значит, что их там нет —
+          повторите позже, а не заводите людей заново.
+        </p>
+
+        <p
           v-else-if="!clients.length"
           :class="$style.hint"
           data-test="bind-empty"
@@ -175,6 +184,7 @@ const toast = useToast();
 
 const {
   isLoading: isLoadingClients,
+  hasError: failed,
   panelClients,
   getPanelClients,
 } = useGetPanelClients();
@@ -350,6 +360,11 @@ watch(isOpen, (opened) => {
 
 .hint {
   color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.failed {
+  color: var(--destructive);
   font-size: 0.875rem;
 }
 

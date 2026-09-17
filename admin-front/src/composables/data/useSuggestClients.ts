@@ -11,6 +11,7 @@ export default function useSuggestClients() {
   const {
     isLoading,
     data,
+    hasError,
     execute,
     onDone,
     onError,
@@ -21,6 +22,7 @@ export default function useSuggestClients() {
 
   return {
     isLoading,
+    hasError,
     suggestions: data,
     suggestClients: execute,
     onDone,

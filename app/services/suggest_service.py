@@ -16,6 +16,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from sqlalchemy.orm import joinedload
+
 from app.db.models import Config, Recipient
 from app.schemas.suggest import (
     ClientCandidate,
@@ -57,9 +59,12 @@ def _taken_names(db: Session, campaign_id: int) -> dict[tuple[str, str], str]:
     Занятый клиент не исчезает из выдачи, а помечается: увидеть «уже у Иванова» полезнее,
     чем не увидеть ничего и гадать, почему человек не нашёлся.
     """
+    # joinedload: дальше у каждого конфига спрашивается почта получателя, и без него
+    # на кампании в 80 человек это триста отдельных запросов.
     configs = (
         db.query(Config)
         .join(Recipient, Config.recipient_id == Recipient.id)
+        .options(joinedload(Config.recipient))
         .filter(Recipient.campaign_id == campaign_id)
         .all()
     )

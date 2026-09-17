@@ -86,9 +86,14 @@ def _tokens(value: str, stop_words: frozenset[str]) -> list[str]:
     return _parts(value, stop_words, _MIN_TOKEN)
 
 
-def _normalized(value: str) -> str:
-    """Строка без разделителей и цифр — для сравнения слипшихся имён."""
-    return re.sub(r"[^a-z]", "", value.lower())
+def _normalized(value: str, stop_words: frozenset[str] = frozenset()) -> str:
+    """Строка без разделителей, цифр и служебных хвостов — для слипшихся имён.
+
+    Хвосты выбрасываются и здесь, а не только при сравнении по словам: иначе `chain`
+    в `artem_solo1chain` занижал бы и подстрочную меру, и биграммную, хотя о человеке
+    он ничего не говорит.
+    """
+    return "".join(_parts(value, stop_words, 1))
 
 
 def _shared_prefix(first: str, second: str) -> int:
@@ -103,15 +108,18 @@ def _shared_prefix(first: str, second: str) -> int:
 
 
 def _variants(word: str) -> list[str]:
-    """Слово и оно же без инициала, приклеенного спереди или сзади.
+    """Слово и оно же без инициала, приклеенного спереди.
 
     `kboyko` — это «К. Бойко», а на панели тот же человек записан как `boykokr`.
     Без этого такие пары не сходятся: общего начала у них нет вовсе.
+
+    Обрезка с конца тут была бы мёртвой: она даёт префикс самого слова, а значит
+    совпадение не длиннее, чем у него самого.
     """
     if len(word) <= _MIN_PREFIX:
         return [word]
 
-    return [word, word[1:], word[:-1]]
+    return [word, word[1:]]
 
 
 def _token_score(query: list[str], candidate: list[str]) -> float:
@@ -192,9 +200,9 @@ def _same_person(first: str, second: str) -> bool:
 def _score_term(term: str, name: str, stop_words: frozenset[str]) -> float:
     """Похожесть имени на одну строку запроса — лучшая из трёх мер."""
     query_tokens = _tokens(term, stop_words)
-    query_flat = _normalized(term)
+    query_flat = _normalized(term, stop_words)
     candidate_tokens = _tokens(name, stop_words)
-    candidate_flat = _normalized(name)
+    candidate_flat = _normalized(name, stop_words)
 
     return max(
         _token_score(query_tokens, candidate_tokens),

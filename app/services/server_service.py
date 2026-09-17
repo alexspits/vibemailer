@@ -45,6 +45,23 @@ def get_server(key: str) -> ServerConfig:
     return server
 
 
+def get_enabled_server(key: str) -> ServerConfig:
+    """То же, но выключенный сервер отвергается.
+
+    Нужно там, где действие создаёт конфиги: генерация выключенные серверы не берёт,
+    и привязка к такому серверу оставила бы строку, которую нечем наполнить.
+    """
+    server = get_server(key)
+
+    if not server.enabled:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Сервер {key} выключен в servers.yml — конфиги на нём не заводятся",
+        )
+
+    return server
+
+
 def resolve_keys(keys: list[str] | None) -> list[str]:
     """Ключи серверов для операции: пустой список или None — значит все включённые.
 

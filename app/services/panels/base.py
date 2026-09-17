@@ -61,8 +61,14 @@ class Artifact:
 
 
 def config_filename(name: str) -> str:
-    """Имя файла без путей — защита от подстановки `../` в имени конфига."""
-    return f"{Path(name).name}.conf"
+    """Имя файла без путей — защита от подстановки `../` в имени конфига.
+
+    Точки и пустая строка тоже отсекаются: `Path('..').name` — это `..`, и вложение
+    называлось бы `...conf`, а `Path('.').name` пуст и давал бы просто `.conf`.
+    """
+    safe = Path(name).name.strip(". ")
+
+    return f"{safe or 'config'}.conf"
 
 
 class PanelClient(Protocol):
@@ -120,6 +126,16 @@ class BasePanel:
             )
         except TransportError as exc:
             raise PanelUnreachable(str(exc)) from exc
+
+    @staticmethod
+    def _describe(response) -> str:
+        """Ответ панели словами: код и размер, без самого тела.
+
+        Тело в текст ошибки не попадает намеренно: ошибка сохраняется в `Config.error`
+        и показывается в интерфейсе, а телом вполне может оказаться .conf с приватным
+        ключом или страница входа с токеном сессии.
+        """
+        return f"код {response.status}, {len(response.body)} байт"
 
     @staticmethod
     def _json(response, title: str) -> object:

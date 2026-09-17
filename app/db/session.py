@@ -4,16 +4,33 @@
 в разных потоках, поэтому для SQLite отключаем check_same_thread.
 """
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-_connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+_is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+_connect_args = {"check_same_thread": False} if _is_sqlite else {}
 
 engine = create_engine(settings.DATABASE_URL, connect_args=_connect_args, future=True)
+
+if _is_sqlite:
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(connection, _record) -> None:
+        """Включает внешние ключи: в SQLite они по умолчанию выключены.
+
+        Без этого `ondelete="CASCADE"` в моделях — просто украшение, и каскад работает
+        только когда удаляют через ORM. Прямой DELETE (например, из служебного скрипта)
+        оставлял бы получателей без кампании и конфиги без получателя.
+        """
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
 

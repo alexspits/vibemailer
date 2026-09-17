@@ -12,6 +12,7 @@ Cookie транспорт держит сам: старый API 3x-ui логин
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import logging
 import shlex
@@ -206,12 +207,12 @@ class SshCurlTransport:
         body, _, raw_status = out.rpartition(marker)
 
         if not raw_status:
-            raise TransportError(f"curl не вернул код ответа: {out[:200]}")
+            raise TransportError(f"curl не вернул код ответа ({len(out)} байт в ответе)")
 
         try:
             status = int(raw_status.strip())
         except ValueError as exc:
-            raise TransportError(f"curl вернул нечисловой код ответа: {raw_status[:50]}") from exc
+            raise TransportError("curl вернул нечисловой код ответа") from exc
 
         return Response(status=status, body=body)
 
@@ -224,7 +225,12 @@ class SshCurlTransport:
             cookie = SimpleCookie()
             cookie.load(line.partition(":")[2].strip())
             for name, morsel in cookie.items():
-                self._cookies[name] = morsel.value
+                # Пустое значение — это удаляющая cookie (`session=; Max-Age=0`).
+                # Сохранить её значит слать пустую сессию в каждом следующем запросе.
+                if morsel.value:
+                    self._cookies[name] = morsel.value
+                else:
+                    self._cookies.pop(name, None)
 
     # ------------------------------------------------------------------ #
     # Публичное API
@@ -249,9 +255,13 @@ class SshCurlTransport:
         return self._split_status(out)
 
     def close(self) -> None:
-        if self._client is not None:
-            self._client.close()
-            self._client = None
+        # Ссылку обнуляем в любом случае: если закрытие не удалось, соединение всё равно
+        # нерабочее, а оставленная ссылка заставит `_ssh()` закрывать его снова и снова.
+        client, self._client = self._client, None
+
+        if client is not None:
+            with contextlib.suppress(Exception):
+                client.close()
 
 
 @dataclass
@@ -290,7 +300,9 @@ class DirectTransport:
                 json=json_body,
                 data=form_body,
             )
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+            # InvalidURL не наследник HTTPError: испорченный base_url в servers.yml иначе
+            # пролетал бы мимо классификации и давал 500 вместо внятного «панель недоступна».
             raise TransportError(f"Не удалось обратиться к панели: {exc}") from exc
 
         return Response(status=response.status_code, body=response.text)

@@ -41,9 +41,7 @@ class AmneziaPanel(BasePanel):
         response = self._request(method, path, json_body=json_body)
 
         if not response.is_ok:
-            raise PanelError(
-                f"Панель {self.server.title} ответила {response.status}: {response.body[:200]}"
-            )
+            raise PanelError(f"Панель {self.server.title} ответила: {self._describe(response)}")
 
         return self._json(response, self.server.title)
 

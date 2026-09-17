@@ -8,6 +8,7 @@ export default function useGetPanelClients() {
   const {
     isLoading,
     data,
+    hasError,
     execute,
     onDone,
     onError,
@@ -18,6 +19,7 @@ export default function useGetPanelClients() {
 
   return {
     isLoading,
+    hasError,
     panelClients: data,
     getPanelClients: execute,
     onDone,

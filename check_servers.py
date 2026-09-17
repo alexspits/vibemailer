@@ -168,14 +168,28 @@ def _check_bindings(keys: list[str]) -> int:
             print("Привязок в базе нет — сверять нечего.")
             return 0
 
-        broken = 0
+        # Считаем раздельно: смешивать «панель не ответила» с «привязка не нашлась»
+        # нельзя — иначе итог «привязок под вопросом: N» врёт, когда панель недоступна
+        # и её привязки просто не проверялись.
+        missing_total = 0
+        unreachable: list[str] = []
+
         for key in sorted(wanted):
-            panel = build_panel(srv.get_server(key))
+            server = srv.find_server(key)
+
+            if server is None:
+                # Ключи здесь из базы: сервер могли убрать из servers.yml, оставив
+                # привязки. HTTPException в CLI дала бы трейсбек вместо объяснения.
+                print(f"[{key}] сервера нет в servers.yml, а привязки на него остались")
+                unreachable.append(key)
+                continue
+
+            panel = build_panel(server)
             try:
                 live = set(panel.list_client_names())
             except Exception as exc:  # noqa: BLE001 - смысл скрипта в том, чтобы показать ошибку
                 print(f"[{key}] ОШИБКА: {exc}")
-                broken += 1
+                unreachable.append(key)
                 continue
             finally:
                 panel.close()
@@ -189,15 +203,20 @@ def _check_bindings(keys: list[str]) -> int:
                 tail = f" — похоже на {', '.join(hints)}" if hints else " — похожих имён нет"
                 print(f"  {config.external_name!r} у «{config.recipient.email}»{tail}")
 
-            broken += len(missing)
+            missing_total += len(missing)
 
         print()
-        if broken:
-            print(f"Привязок под вопросом: {broken}. Генерация по ним не пойдёт.")
-            return 1
 
-        print("Все привязки нашлись на панелях.")
-        return 0
+        if unreachable:
+            print(f"Не проверены (панель не ответила): {', '.join(unreachable)}")
+
+        if missing_total:
+            print(f"Привязок под вопросом: {missing_total}. Генерация по ним не пойдёт.")
+
+        if not missing_total and not unreachable:
+            print("Все привязки нашлись на панелях.")
+
+        return 1 if (missing_total or unreachable) else 0
 
     finally:
         db.close()

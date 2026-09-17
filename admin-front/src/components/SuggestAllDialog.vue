@@ -22,7 +22,16 @@
           Читаем списки клиентов со всех панелей…
         </p>
 
-        <template v-else>
+        <p
+          v-else-if="failed"
+          :class="$style.serverError"
+          data-test="suggest-all-failed"
+        >
+          Подбор не удался — списки клиентов прочитать не смогли. Это не «никого не
+          нашлось»: повторите позже.
+        </p>
+
+        <template v-else-if="!failed">
           <div
             v-for="person in found"
             :key="person.recipientId"
@@ -141,6 +150,7 @@ const toast = useToast();
 
 const {
   isLoading: isSearching,
+  hasError: failed,
   suggestions,
   suggestClients,
   onDone: onSearchDone,
@@ -177,7 +187,7 @@ const totalChecked = computed(
 );
 
 const summary = computed(() => {
-  if (isSearching.value) {
+  if (isSearching.value || failed.value) {
     return '';
   }
 
