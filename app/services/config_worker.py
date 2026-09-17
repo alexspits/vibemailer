@@ -151,7 +151,15 @@ class ConfigWorker:
         # На панель идём с её именем: у привязанного вручную клиента оно короткое
         # и с человеческим именем конфига не совпадает.
         name = config.panel_name
-        self._mark_generating(db, config)
+        # Приметы строки на момент старта. Генерация идёт секундами, и за это время
+        # оператор успевает отвязать, перепривязать или удалить конфиг из интерфейса.
+        # Записывать результат в изменившуюся строку нельзя: там окажется доступ
+        # клиента, которого в ней больше не ждут.
+        identity = (config.id, config.external_name, config.seq)
+
+        if not self._claim(db, config):
+            log.info("Конфиг %s уже не в очереди — пропускаем", config.id)
+            return None
 
         try:
             # Получение панели тоже внутри try: сервер могли убрать из servers.yml при
@@ -161,10 +169,10 @@ class ConfigWorker:
             # Привязанного клиента только забираем: создавать под его именем нельзя.
             artifact = self._adopt(panel, name) if config.is_external else panel.ensure_client(name)
         except Exception as exc:  # noqa: BLE001 - ошибка одного конфига не рушит очередь
-            self._mark_failed(db, config, exc)
+            self._mark_failed(db, config, exc, identity)
             return exc
 
-        self._store_result(db, config, artifact)
+        self._store_result(db, config, artifact, identity)
         return None
 
     @staticmethod
@@ -193,15 +201,49 @@ class ConfigWorker:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _mark_generating(db: Session, config: Config) -> None:
-        config.status = ConfigStatus.GENERATING
+    def _write(db: Session, identity: tuple, statuses: tuple, values: dict) -> bool:
+        """Меняет строку конфига, только если она всё ещё та же и в ожидаемом статусе.
+
+        Условие целиком в самом UPDATE, а не проверкой перед ним: между проверкой и
+        записью в другом потоке помещается всё то же самое, от чего мы защищаемся.
+        Возвращает False, если строку успели изменить или удалить.
+        """
+        config_id, external, seq = identity
+
+        query = db.query(Config).filter(
+            Config.id == config_id,
+            Config.status.in_(statuses),
+            Config.seq == seq,
+            Config.external_name.is_(None)
+            if external is None
+            else Config.external_name == external,
+        )
+
+        changed = query.update(values, synchronize_session=False)
         db.commit()
 
-    @staticmethod
-    def _mark_failed(db: Session, config: Config, exc: Exception) -> None:
-        config.status = ConfigStatus.FAILED
-        config.error = str(exc)
-        db.commit()
+        return bool(changed)
+
+    def _claim(self, db: Session, config: Config) -> bool:
+        """Забирает конфиг из очереди себе. False — его уже нет или он не в очереди."""
+        identity = (config.id, config.external_name, config.seq)
+
+        return self._write(
+            db, identity, (ConfigStatus.QUEUED,), {Config.status: ConfigStatus.GENERATING}
+        )
+
+    def _mark_failed(self, db: Session, config: Config, exc: Exception, identity=None) -> None:
+        identity = identity or (config.id, config.external_name, config.seq)
+        statuses = (ConfigStatus.GENERATING, ConfigStatus.QUEUED)
+
+        written = self._write(
+            db, identity, statuses, {Config.status: ConfigStatus.FAILED, Config.error: str(exc)}
+        )
+
+        if not written:
+            log.info("Конфиг %s изменился, пока шла генерация — ошибку не записываем", config.id)
+            return
+
         log.error(
             "Не удалось получить конфиг %s на сервере %s",
             config.name,
@@ -209,26 +251,37 @@ class ConfigWorker:
             exc_info=exc,
         )
 
-    @staticmethod
-    def _store_result(db: Session, config: Config, artifact: Artifact) -> None:
+    def _store_result(
+        self, db: Session, config: Config, artifact: Artifact, identity: tuple
+    ) -> None:
         """Кладёт в БД то, что вернула панель: файл либо ссылку подписки."""
-        config.kind = artifact.kind
+        values = {
+            Config.kind: artifact.kind,
+            Config.status: ConfigStatus.READY,
+            Config.error: None,
+            Config.generated_at: datetime.now(UTC).replace(tzinfo=None),
+        }
 
         if artifact.kind is ArtifactKind.LINK:
-            config.link = artifact.link
-            config.filename = None
-            config.content = None
-            config.size = 0
+            values |= {
+                Config.link: artifact.link,
+                Config.filename: None,
+                Config.content: None,
+                Config.size: 0,
+            }
         else:
-            config.filename = artifact.filename
-            config.content = artifact.content
-            config.size = len(artifact.content or b"")
-            config.link = None
+            values |= {
+                Config.filename: artifact.filename,
+                Config.content: artifact.content,
+                Config.size: len(artifact.content or b""),
+                Config.link: None,
+            }
 
-        config.status = ConfigStatus.READY
-        config.error = None
-        config.generated_at = datetime.now(UTC).replace(tzinfo=None)
-        db.commit()
+        if not self._write(db, identity, (ConfigStatus.GENERATING,), values):
+            # Пока ходили на панель, строку отвязали, перепривязали или удалили.
+            # Записать в неё этот артефакт — значит отдать человеку доступ клиента,
+            # которого в этой строке больше не ждут.
+            log.warning("Конфиг %s изменился, пока шла генерация — результат отброшен", config.id)
 
     # ------------------------------------------------------------------ #
     # Запросы
