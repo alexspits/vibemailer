@@ -77,6 +77,43 @@ class AmneziaPanel(BasePanel):
 
         return clients
 
+    def protocol(self) -> str:
+        """Версия AmneziaWG, которую получат новые клиенты этого сервера.
+
+        Версия — свойство сервера панели, а не клиента: клиент наследует её при
+        создании, и переключить её у существующего сервера нельзя — в API панели есть
+        только создание, удаление, запуск и остановка. Поэтому знать версию полезно
+        заранее: иначе «завели клиента» и «клиент получил нужный протокол» — разные
+        вещи, и расхождение обнаружится уже у получателя.
+        """
+        server = self._server()
+
+        if server.get("awg3_enabled"):
+            return "AWG 3.1"
+
+        if server.get("awg2_enabled"):
+            return "AWG 2.0"
+
+        return "AWG 1.5" if server.get("obfuscation_enabled") else "WireGuard без обфускации"
+
+    def _server(self) -> dict:
+        """Запись сервера панели, с которым работаем."""
+        server_id = self._resolve_server_id()
+        servers = self._api("GET", "/api/servers")
+
+        if not isinstance(servers, list):
+            raise PanelError("Панель вернула неожиданный ответ на список серверов")
+
+        found = next(
+            (s for s in servers if isinstance(s, dict) and s.get("id") == server_id),
+            None,
+        )
+
+        if found is None:
+            raise PanelError(f"Сервер {server_id} на панели не найден")
+
+        return found
+
     def list_client_names(self) -> list[str]:
         return [client["name"] for client in self._clients()]
 

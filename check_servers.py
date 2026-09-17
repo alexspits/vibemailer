@@ -28,10 +28,14 @@ from app.db.models import Config
 from app.db.session import SessionLocal
 from app.services import server_service as srv
 from app.services.panels import build_panel
+from app.services.panels.amnezia import AmneziaPanel
 from app.services.panels.xui import XuiPanel
 
 # Сколько имён клиентов показывать, чтобы вывод не превращался в простыню.
 SAMPLE = 10
+
+# Самая свежая версия протокола, которую умеет панель AmneziaWG Web UI.
+LATEST_AWG = "AWG 3.1"
 
 
 def _servers(keys: list[str]) -> list[ServerConfig]:
@@ -87,6 +91,21 @@ def _hint(server: ServerConfig, error: str) -> str | None:
     return None
 
 
+# Версия AmneziaWG задаётся при создании сервера панели и потом не меняется, а клиент
+# наследует её молча. Показываем явно: иначе «клиента завели» и «клиент получил нужный
+# протокол» — разные вещи, и расхождение всплывёт уже у получателя.
+def _report_protocol(panel: AmneziaPanel) -> None:
+    """Печатает версию протокола, которую получат новые клиенты."""
+    protocol = panel.protocol()
+    note = (
+        ""
+        if protocol == LATEST_AWG
+        else f" (новее — {LATEST_AWG}, но только на новом сервере панели)"
+    )
+
+    print(f"  новые клиенты получат: {protocol}{note}")
+
+
 def _check(server: ServerConfig, name: str) -> bool:
     """Одна панель: список клиентов и, если просили, поиск имени. True — всё вышло."""
     print(_describe(server))
@@ -103,6 +122,9 @@ def _check(server: ServerConfig, name: str) -> bool:
 
         if isinstance(panel, XuiPanel):
             _report_subscription(panel)
+
+        if isinstance(panel, AmneziaPanel):
+            _report_protocol(panel)
 
         if name:
             found = panel.fetch_client(name)
