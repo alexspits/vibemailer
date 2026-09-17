@@ -93,6 +93,25 @@ export interface RecipientSuggestion {
 export type SuggestClientsRequestWire = components['schemas']['SuggestClientsIn'];
 export type SuggestClientsResponseWire = components['schemas']['SuggestResultEnvelope'];
 
+export interface BindSuggestionItem {
+  recipientId: number;
+  serverKey: string;
+  names: string[];
+}
+
+export interface BindSuggestionsInput {
+  id: number;
+  items: BindSuggestionItem[];
+}
+
+export interface BindSuggestionsSummary {
+  bound: number;
+  recipients: number;
+}
+
+export type BindSuggestionsRequestWire = components['schemas']['BindSuggestionsIn'];
+export type BindSuggestionsResponseWire = components['schemas']['BindSuggestionsEnvelope'];
+
 export interface GenerateConfigsInput {
   id: number;
   /** Ключи серверов; пусто — все включённые («Сгенерировать все»). */

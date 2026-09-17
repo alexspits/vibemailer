@@ -7,6 +7,7 @@ from app.api.deps import get_db
 from app.db.models import CampaignStatus
 from app.schemas.campaign import CampaignRead, CreateCampaign, MessageOut
 from app.schemas.envelope import (
+    BindSuggestionsEnvelope,
     CampaignReadEnvelope,
     ImportPreviewEnvelope,
     ImportResultEnvelope,
@@ -19,7 +20,7 @@ from app.schemas.envelope import (
 from app.schemas.import_recipients import RecipientsImportText
 from app.schemas.recipient import RecipientsBulk
 from app.schemas.server import GenerateConfigsIn
-from app.schemas.suggest import SuggestClientsIn
+from app.schemas.suggest import BindSuggestionsIn, BindSuggestionsResult, SuggestClientsIn
 from app.services import campaign_service as cs
 from app.services import config_service as cfs
 from app.services import import_service as imp
@@ -177,3 +178,15 @@ def suggest_clients(
     payload = payload or SuggestClientsIn()
 
     return ok(sug.suggest_clients(db, campaign_id, payload.recipient_ids, payload.hints))
+
+
+@router.post(
+    "/{campaign_id}/clients/bind",
+    status_code=status.HTTP_201_CREATED,
+    response_model=BindSuggestionsEnvelope,
+)
+def bind_suggestions(campaign_id: int, payload: BindSuggestionsIn, db: Session = Depends(get_db)):
+    """Привязывает всё отмеченное в подборе — по всем получателям сразу."""
+    bound, recipients = cfs.bind_suggestions(db, campaign_id, payload.items)
+
+    return ok(BindSuggestionsResult(bound=bound, recipients=recipients))

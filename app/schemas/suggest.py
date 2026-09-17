@@ -55,3 +55,29 @@ class RecipientSuggestion(BaseModel):
 
 class SuggestResult(BaseModel):
     recipients: list[RecipientSuggestion] = []
+
+
+class BindSuggestionItem(BaseModel):
+    """Одна привязка из подбора: кому, на каком сервере и какие клиенты."""
+
+    recipient_id: int
+    server_key: str
+    names: list[str] = Field(min_length=1)
+
+
+class BindSuggestionsIn(BaseModel):
+    """Всё отмеченное в подборе — одним запросом.
+
+    Пачкой, а не по одной привязке: каждая проверяет имена по живой панели, и тридцать
+    получателей превратились бы в десятки заходов по SSH. Здесь панель читается один
+    раз, а проверки идут разом — в том числе на то, что один клиент не достался двоим.
+    """
+
+    items: list[BindSuggestionItem] = Field(min_length=1)
+
+
+class BindSuggestionsResult(BaseModel):
+    """Сколько привязок легло и к скольким получателям."""
+
+    bound: int
+    recipients: int

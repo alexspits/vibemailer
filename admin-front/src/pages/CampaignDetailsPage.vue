@@ -44,6 +44,18 @@
         </Button>
 
         <Button
+          v-if="recipientsList.length"
+          variant="outline"
+          title="Поискать всех получателей кампании на панелях и привязать найденное"
+          data-test="suggest-all-button"
+          @click="isSuggestAllOpen = true"
+        >
+          <Wand :class="$style.iconBtn" />
+
+          Найти всех на панелях
+        </Button>
+
+        <Button
           v-for="server in serversList"
           :key="server.key"
           :disabled="isServerGenerateDisabled(server.key)"
@@ -445,6 +457,12 @@
       :recipient="suggestTarget"
       @bound="load"
     />
+
+    <SuggestAllDialog
+      v-model:open="isSuggestAllOpen"
+      :campaign-id="campaignId"
+      @bound="load"
+    />
   </section>
 </template>
 
@@ -482,6 +500,7 @@ import {
 } from '@/components/ui/tooltip';
 import AddRecipientsDialog from '@/components/AddRecipientsDialog.vue';
 import AddConfigsDialog from '@/components/AddConfigsDialog.vue';
+import SuggestAllDialog from '@/components/SuggestAllDialog.vue';
 import SuggestClientsDialog from '@/components/SuggestClientsDialog.vue';
 import BindConfigDialog from '@/components/BindConfigDialog.vue';
 import { API_BASE_URL } from '@/apiService/httpClient';
@@ -695,6 +714,8 @@ function openAddConfigs(recipient: Recipient) {
   addConfigsTarget.value = recipient;
   isAddConfigsOpen.value = true;
 }
+
+const isSuggestAllOpen = ref(false);
 
 const isSuggestOpen = ref(false);
 const suggestTarget = ref<Recipient | null>(null);

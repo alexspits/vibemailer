@@ -196,6 +196,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/campaigns/{campaign_id}/clients/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind Suggestions
+         * @description Привязывает всё отмеченное в подборе — по всем получателям сразу.
+         */
+        post: operations["bind_suggestions_api_campaigns__campaign_id__clients_bind_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recipients/{recipient_id}": {
         parameters: {
             query?: never;
@@ -417,6 +437,55 @@ export interface components {
         BindConfigIn: {
             /** External Name */
             external_name: string;
+        };
+        /**
+         * BindSuggestionItem
+         * @description Одна привязка из подбора: кому, на каком сервере и какие клиенты.
+         */
+        BindSuggestionItem: {
+            /** Recipient Id */
+            recipient_id: number;
+            /** Server Key */
+            server_key: string;
+            /** Names */
+            names: string[];
+        };
+        /**
+         * BindSuggestionsEnvelope
+         * @description Обёртка результата массовой привязки.
+         */
+        BindSuggestionsEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["BindSuggestionsResult"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * BindSuggestionsIn
+         * @description Всё отмеченное в подборе — одним запросом.
+         *
+         *     Пачкой, а не по одной привязке: каждая проверяет имена по живой панели, и тридцать
+         *     получателей превратились бы в десятки заходов по SSH. Здесь панель читается один
+         *     раз, а проверки идут разом — в том числе на то, что один клиент не достался двоим.
+         */
+        BindSuggestionsIn: {
+            /** Items */
+            items: components["schemas"]["BindSuggestionItem"][];
+        };
+        /**
+         * BindSuggestionsResult
+         * @description Сколько привязок легло и к скольким получателям.
+         */
+        BindSuggestionsResult: {
+            /** Bound */
+            bound: number;
+            /** Recipients */
+            recipients: number;
         };
         /**
          * CampaignRead
@@ -1426,6 +1495,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuggestResultEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bind_suggestions_api_campaigns__campaign_id__clients_bind_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindSuggestionsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BindSuggestionsEnvelope"];
                 };
             };
             /** @description Validation Error */

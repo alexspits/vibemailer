@@ -3,7 +3,9 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.servers import ServerConfig
 from app.db.models import Config, ConfigStatus, Recipient
+from app.services import campaign_service as cs
 from app.services import recipient_service as rs
 from app.services import server_service as srv
 
@@ -131,20 +133,31 @@ def bind_new_clients(
         )
 
     _reject_taken_names(db, recipient, server_key, wanted)
+    _attach_names(recipient, server, wanted)
 
-    # Сначала занимаем пустые строки этого сервера и только под остаток заводим новые:
-    # иначе привязка к уже существующей пустой строке плодила бы рядом вторую.
+    db.commit()
+    db.refresh(recipient)
+
+    return recipient
+
+
+def _attach_names(recipient: Recipient, server: ServerConfig, names: list[str]) -> None:
+    """Раскладывает имена по строкам конфигов получателя. Без коммита.
+
+    Сначала занимаются пустые строки этого сервера и только под остаток заводятся
+    новые: иначе привязка к уже существующей пустой строке плодила бы рядом вторую.
+    """
     free = sorted(
-        (c for c in recipient.configs if c.server_key == server_key and _is_free(c)),
+        (c for c in recipient.configs if c.server_key == server.key and _is_free(c)),
         key=lambda config: config.seq,
     )
-    last = max((c.seq for c in recipient.configs if c.server_key == server_key), default=0)
+    last = max((c.seq for c in recipient.configs if c.server_key == server.key), default=0)
 
-    for offset, name in enumerate(wanted):
+    for offset, name in enumerate(names):
         config = free[offset] if offset < len(free) else None
 
         if config is None:
-            config = Config(seq=last + offset - len(free) + 1, server_key=server_key)
+            config = Config(seq=last + offset - len(free) + 1, server_key=server.key)
             recipient.configs.append(config)
 
         config.kind = server.artifact_kind
@@ -153,15 +166,85 @@ def bind_new_clients(
         config.error = None
 
     recipient.config_count = max(config.seq for config in recipient.configs)
-    db.commit()
-    db.refresh(recipient)
-
-    return recipient
 
 
 def _is_free(config: Config) -> bool:
     """Пустая ли строка конфига: ни привязки, ни того, что уже получено с панели."""
     return config.external_name is None and not config.is_ready
+
+
+def bind_suggestions(db: Session, campaign_id: int, items: list) -> tuple[int, int]:
+    """Привязывает всё отмеченное в подборе. Возвращает (привязок, получателей).
+
+    Панели читаются по одному разу на весь запрос, проверки — до единой записи в базу:
+    наполовину применённый подбор пришлось бы разбирать руками, а по именам на панелях
+    непонятно, что уже привязано, а что нет.
+    """
+    campaign = cs.get_campaign(db, campaign_id)
+    by_id = {recipient.id: recipient for recipient in campaign.recipients}
+
+    unknown = {item.recipient_id for item in items} - set(by_id)
+    if unknown:
+        raise HTTPException(
+            status_code=404,
+            detail=f"В кампании нет получателей с id {', '.join(map(str, sorted(unknown)))}",
+        )
+
+    servers = {item.server_key: srv.get_server(item.server_key) for item in items}
+    live = {key: set(srv.list_panel_clients(key)) for key in servers}
+
+    _reject_unknown_names(items, live)
+    _reject_duplicate_names(items, by_id)
+
+    for item in items:
+        recipient = by_id[item.recipient_id]
+        wanted = list(dict.fromkeys(name.strip() for name in item.names if name.strip()))
+
+        _reject_taken_names(db, recipient, item.server_key, wanted)
+        _attach_names(recipient, servers[item.server_key], wanted)
+
+    db.commit()
+
+    return sum(len(item.names) for item in items), len({item.recipient_id for item in items})
+
+
+def _reject_unknown_names(items: list, live: dict[str, set[str]]) -> None:
+    """Отказ, если отмеченного клиента на панели уже нет: список мог устареть."""
+    missing = {
+        (item.server_key, name)
+        for item in items
+        for name in item.names
+        if name not in live[item.server_key]
+    }
+
+    if missing:
+        listed = ", ".join(f"{key}: {name}" for key, name in sorted(missing))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Этих клиентов на панелях больше нет: {listed}. Повторите подбор.",
+        )
+
+
+def _reject_duplicate_names(items: list, by_id: dict) -> None:
+    """Отказ, если один клиент отмечен сразу у двоих.
+
+    Подбор вполне может предложить `lisa` обеим Елизаветам, и заметить это глазами в
+    длинном списке трудно. Молча отдать один доступ двоим — худший исход.
+    """
+    seen: dict[tuple[str, str], int] = {}
+
+    for item in items:
+        for name in item.names:
+            owner = seen.setdefault((item.server_key, name), item.recipient_id)
+
+            if owner != item.recipient_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Клиент {name} на сервере {item.server_key} отмечен сразу у "
+                        f"{by_id[owner].email} и {by_id[item.recipient_id].email}"
+                    ),
+                )
 
 
 def _reject_taken_names(

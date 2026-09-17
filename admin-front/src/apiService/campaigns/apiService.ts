@@ -4,6 +4,7 @@ import createCampaignAdapter from './adapters/createCampaignAdapter';
 import deleteCampaignAdapter from './adapters/deleteCampaignAdapter';
 import generateConfigsAdapter from './adapters/generateConfigsAdapter';
 import startCampaignAdapter from './adapters/startCampaignAdapter';
+import bindSuggestionsAdapter from './adapters/bindSuggestionsAdapter';
 import retryFailedAdapter from './adapters/retryFailedAdapter';
 import suggestClientsAdapter from './adapters/suggestClientsAdapter';
 import stopCampaignAdapter from './adapters/stopCampaignAdapter';
@@ -22,6 +23,9 @@ import type {
   ListCampaignsResponseWire,
   StartCampaignInput,
   StartCampaignResponseWire,
+  BindSuggestionsInput,
+  BindSuggestionsResponseWire,
+  BindSuggestionsSummary,
   RecipientSuggestion,
   RetryFailedInput,
   RetryFailedResponseWire,
@@ -104,6 +108,22 @@ export const campaignsApiService = {
     }
 
     return suggestions;
+  },
+
+  bindSuggestions: async (input: BindSuggestionsInput): Promise<BindSuggestionsSummary> => {
+    const response = await request<BindSuggestionsResponseWire>(
+      'POST',
+      `/campaigns/${input.id}/clients/bind`,
+      bindSuggestionsAdapter.adaptParams(input),
+    );
+
+    const summary = bindSuggestionsAdapter.adaptResponseData(response);
+
+    if (!summary) {
+      throw new Error('Не удалось привязать отмеченных клиентов');
+    }
+
+    return summary;
   },
 
   retryFailed: async (input: RetryFailedInput): Promise<number> => {

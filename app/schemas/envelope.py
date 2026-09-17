@@ -19,7 +19,7 @@ from app.schemas.campaign import CampaignRead, MessageOut
 from app.schemas.import_recipients import ImportPreview, ImportResult
 from app.schemas.recipient import ConfigRead, RecipientRead
 from app.schemas.server import ServerRead
-from app.schemas.suggest import SuggestResult
+from app.schemas.suggest import BindSuggestionsResult, SuggestResult
 
 
 class ApiEnvelope[T](BaseModel):
@@ -73,6 +73,10 @@ class ListPanelClientsEnvelope(ApiEnvelope[list[str]]):
 
 class SuggestResultEnvelope(ApiEnvelope[SuggestResult]):
     """Обёртка подбора клиентов панели."""
+
+
+class BindSuggestionsEnvelope(ApiEnvelope[BindSuggestionsResult]):
+    """Обёртка результата массовой привязки."""
 
 
 class ConfigReadEnvelope(ApiEnvelope[ConfigRead]):
