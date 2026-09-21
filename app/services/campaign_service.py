@@ -1,7 +1,7 @@
 """Работа с кампаниями: CRUD, прогресс."""
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import exists, func, update
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -12,7 +12,7 @@ from app.db.models import (
     Recipient,
     RecipientStatus,
 )
-from app.schemas.campaign import CloneCampaign, CreateCampaign
+from app.schemas.campaign import CloneCampaign, CreateCampaign, UpdateCampaign
 from app.services import config_service as cfs
 
 
@@ -75,6 +75,49 @@ def clone_campaign(db: Session, campaign_id: int, data: CloneCampaign) -> Campai
     db.commit()
     db.refresh(campaign)
 
+    return campaign
+
+
+def update_campaign(db: Session, campaign_id: int, data: UpdateCampaign) -> Campaign:
+    """Меняет название, тему и текст — пока письма никто не получил.
+
+    Правка после запуска разделила бы рассылку на две: часть людей получила бы одно
+    письмо, часть — другое. Поэтому только статус NEW и ни одного отправленного
+    (NEW бывает и у остановленной на полпути рассылки).
+
+    Условие — в самом UPDATE, а не проверкой перед ним: между проверкой и записью
+    рассылку успевают запустить, и воркер уже шлёт старый текст.
+    """
+    campaign = get_campaign(db, campaign_id)
+    values = data.model_dump(exclude_none=True)
+
+    if not values:
+        return campaign
+
+    already_sent = exists().where(
+        Recipient.campaign_id == Campaign.id,
+        Recipient.status == RecipientStatus.SENT,
+    )
+    result = db.execute(
+        update(Campaign)
+        .where(
+            Campaign.id == campaign_id,
+            Campaign.status == CampaignStatus.NEW,
+            ~already_sent,
+        )
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+
+    if not result.rowcount:
+        raise HTTPException(
+            status_code=400,
+            detail="Рассылка уже запущена или часть писем ушла — менять письмо поздно. "
+            "Создайте новую на основе этой.",
+        )
+
+    db.refresh(campaign)
     return campaign
 
 

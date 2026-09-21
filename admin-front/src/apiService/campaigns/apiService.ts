@@ -6,6 +6,7 @@ import generateConfigsAdapter from './adapters/generateConfigsAdapter';
 import startCampaignAdapter from './adapters/startCampaignAdapter';
 import bindSuggestionsAdapter from './adapters/bindSuggestionsAdapter';
 import cloneCampaignAdapter from './adapters/cloneCampaignAdapter';
+import updateCampaignAdapter from './adapters/updateCampaignAdapter';
 import retryFailedAdapter from './adapters/retryFailedAdapter';
 import suggestClientsAdapter from './adapters/suggestClientsAdapter';
 import stopCampaignAdapter from './adapters/stopCampaignAdapter';
@@ -26,6 +27,7 @@ import type {
   StartCampaignResponseWire,
   BindSuggestionsInput,
   CloneCampaignInput,
+  UpdateCampaignInput,
   BindSuggestionsResponseWire,
   BindSuggestionsSummary,
   RecipientSuggestion,
@@ -107,6 +109,22 @@ export const campaignsApiService = {
 
     if (!campaign) {
       throw new Error('Не удалось создать кампанию на основе прежней');
+    }
+
+    return campaign;
+  },
+
+  updateCampaign: async (input: UpdateCampaignInput): Promise<Campaign> => {
+    const response = await request<GetCampaignResponseWire>(
+      'PATCH',
+      `/campaigns/${input.id}`,
+      updateCampaignAdapter.adaptParams(input),
+    );
+
+    const campaign = updateCampaignAdapter.adaptResponseData(response);
+
+    if (!campaign) {
+      throw new Error('Не удалось сохранить письмо');
     }
 
     return campaign;

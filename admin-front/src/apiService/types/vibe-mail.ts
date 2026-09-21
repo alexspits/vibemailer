@@ -37,7 +37,11 @@ export interface paths {
         delete: operations["delete_campaign_api_campaigns__campaign_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Campaign
+         * @description Правка названия, темы и текста. Только пока письма никто не получил.
+         */
+        patch: operations["update_campaign_api_campaigns__campaign_id__patch"];
         trace?: never;
     };
     "/api/campaigns/{campaign_id}/recipients": {
@@ -1115,6 +1119,18 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /**
+         * UpdateCampaign
+         * @description Правка кампании до запуска: меняется только переданное.
+         */
+        UpdateCampaign: {
+            /** Name */
+            name?: string | null;
+            /** Subject */
+            subject?: string | null;
+            /** Body */
+            body?: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1239,6 +1255,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageOutEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_campaign_api_campaigns__campaign_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCampaign"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignReadEnvelope"];
                 };
             };
             /** @description Validation Error */

@@ -98,6 +98,7 @@ docker compose exec vibe-mail python check_smtp.py
 | `POST` | `/api/campaigns` | создать кампанию |
 | `GET` | `/api/campaigns` | список кампаний + прогресс |
 | `GET` | `/api/campaigns/{id}` | кампания + счётчики |
+| `PATCH` | `/api/campaigns/{id}` | поправить название, тему и текст — пока рассылка не запущена и писем не уходило |
 | `POST` | `/api/campaigns/{id}/recipients` | добавить получателей (`{"items": [...]}`), атомарно |
 | `GET` | `/api/campaigns/{id}/recipients` | список получателей |
 | `POST` | `/api/campaigns/{id}/recipients/preview` | предпросмотр вставленного списка, ничего не пишет |

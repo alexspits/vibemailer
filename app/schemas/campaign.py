@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.db.models import CampaignStatus
 
@@ -25,6 +25,14 @@ class CloneCampaign(BaseModel):
     name: str
     subject: str | None = None
     body: str | None = None
+
+
+class UpdateCampaign(BaseModel):
+    """Правка кампании до запуска: меняется только переданное."""
+
+    name: str | None = Field(default=None, min_length=1)
+    subject: str | None = Field(default=None, min_length=1)
+    body: str | None = Field(default=None, min_length=1)
 
 
 class CampaignRead(BaseModel):

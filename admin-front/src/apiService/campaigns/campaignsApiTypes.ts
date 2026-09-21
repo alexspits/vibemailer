@@ -101,6 +101,15 @@ export interface CloneCampaignInput {
 
 export type CloneCampaignRequestWire = components['schemas']['CloneCampaign'];
 
+export interface UpdateCampaignInput {
+  id: number;
+  name: string;
+  subject: string;
+  body: string;
+}
+
+export type UpdateCampaignRequestWire = components['schemas']['UpdateCampaign'];
+
 export type SuggestClientsRequestWire = components['schemas']['SuggestClientsIn'];
 export type SuggestClientsResponseWire = components['schemas']['SuggestResultEnvelope'];
 

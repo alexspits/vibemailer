@@ -67,6 +67,7 @@ admin-front/src/
 | `POST` | `/api/campaigns` | создать кампанию |
 | `GET` | `/api/campaigns` | список + прогресс |
 | `GET`  | `/api/campaigns/{id}` | кампания + счётчики |
+| `PATCH` | `/api/campaigns/{id}` | правка названия, темы и текста — только пока письма никто не получил (иначе 400) |
 | `POST` | `/api/campaigns/{id}/recipients` | добавить получателей (атомарно) |
 | `GET` | `/api/campaigns/{id}/recipients` | список получателей |
 | `POST` | `/api/campaigns/{id}/recipients/preview` | предпросмотр вставленного списка (dry-run) |

@@ -5,7 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.db.models import CampaignStatus
-from app.schemas.campaign import CampaignRead, CloneCampaign, CreateCampaign, MessageOut
+from app.schemas.campaign import (
+    CampaignRead,
+    CloneCampaign,
+    CreateCampaign,
+    MessageOut,
+    UpdateCampaign,
+)
 from app.schemas.envelope import (
     BindSuggestionsEnvelope,
     CampaignReadEnvelope,
@@ -49,6 +55,15 @@ def list_campaigns(db: Session = Depends(get_db)):
 @router.get("/{campaign_id}", response_model=CampaignReadEnvelope)
 def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
     camp = cs.get_campaign(db, campaign_id)
+    item = CampaignRead.model_validate(camp)
+    item.totals = cs.get_progress(db, camp)
+    return ok(item)
+
+
+@router.patch("/{campaign_id}", response_model=CampaignReadEnvelope)
+def update_campaign(campaign_id: int, data: UpdateCampaign, db: Session = Depends(get_db)):
+    """Правка названия, темы и текста. Только пока письма никто не получил."""
+    camp = cs.update_campaign(db, campaign_id, data)
     item = CampaignRead.model_validate(camp)
     item.totals = cs.get_progress(db, camp)
     return ok(item)

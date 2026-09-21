@@ -180,9 +180,26 @@
       </div>
 
       <div :class="$style.fullWidth">
-        <p :class="$style.label">
-          Текст письма
-        </p>
+        <div :class="$style.labelRow">
+          <p :class="$style.label">
+            Текст письма
+          </p>
+
+          <Button
+            :disabled="!isEditable"
+            :title="isEditable
+              ? 'Поправить название, тему и текст'
+              : 'Письмо уже уходило людям — менять его поздно. Создайте рассылку на основе этой'"
+            variant="outline"
+            size="sm"
+            data-test="edit-campaign-button"
+            @click="isEditOpen = true"
+          >
+            <Pencil :class="$style.iconBtn" />
+
+            Изменить
+          </Button>
+        </div>
 
         <p :class="$style.body">
           {{ campaign.body }}
@@ -487,6 +504,12 @@
       :campaign-id="campaignId"
       @bound="load"
     />
+
+    <EditCampaignDialog
+      v-model:open="isEditOpen"
+      :campaign="campaign ?? null"
+      @saved="load"
+    />
   </section>
 </template>
 
@@ -500,6 +523,7 @@ import {
   Download,
   Link2,
   LoaderCircle,
+  Pencil,
   Plus,
   Trash2,
   Wand,
@@ -527,6 +551,7 @@ import AddConfigsDialog from '@/components/AddConfigsDialog.vue';
 import SuggestAllDialog from '@/components/SuggestAllDialog.vue';
 import SuggestClientsDialog from '@/components/SuggestClientsDialog.vue';
 import BindConfigDialog from '@/components/BindConfigDialog.vue';
+import EditCampaignDialog from '@/components/EditCampaignDialog.vue';
 import { API_BASE_URL } from '@/apiService/httpClient';
 import useCloneCampaign from '@/composables/data/useCloneCampaign';
 import useDeleteConfig from '@/composables/data/useDeleteConfig';
@@ -850,6 +875,14 @@ function openAddRecipients() {
 const isCompleted = computed(() => DISABLED_STATUSES.includes(currentStatus.value));
 
 const isRunning = computed(() => currentStatus.value === 'in_progress');
+
+// Та же граница, что на бэкенде: не запущена и никому ничего не ушло. NEW бывает и у
+// остановленной на полпути рассылки — в ней письмо менять уже нельзя.
+const isEditable = computed(
+  () => currentStatus.value === 'new' && !isCampaignStarted.value && !progressTotals.value.sent,
+);
+
+const isEditOpen = ref(false);
 
 const stopLabel = computed(() => (isStopping.value ? 'Останавливаем…' : 'Остановить'));
 
@@ -1179,6 +1212,14 @@ function formatDate(value: string): string {
 .body {
   white-space: pre-wrap;
   font-weight: 500;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .fullWidth {
