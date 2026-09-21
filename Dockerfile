@@ -22,6 +22,9 @@ RUN npm run build
 # --- приложение ---
 FROM python:3.14-slim
 
+# По этой метке `make docker_build` находит и удаляет прежние образы проекта — и только их.
+LABEL app=vibe-mail
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/home/app

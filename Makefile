@@ -28,8 +28,16 @@ check_bindings:
 check_smtp:
 	$(PIPENV) python check_smtp.py
 
+# Пересборка переносит тег на новый образ, а прежний остаётся безымянным и копится —
+# по 230 МБ за сборку. Чистим только безымянные образы этого проекта (метка `app` из
+# Dockerfile, а не метка compose — та зависит от имени папки):
+# чужие не трогаем, а занятые контейнером docker пропустит сам — они уйдут в следующий
+# раз, после `docker_up`, когда контейнер пересоздан на новом образе.
+PRUNE_OLD := docker image prune -f --filter label=app=vibe-mail >/dev/null
+
 docker_build:
 	docker compose build
+	@$(PRUNE_OLD)
 
 # data/ создаём заранее: docker создал бы его от root, и потом не удалить без sudo.
 # Проверка перед стартом не придирка: docker на месте отсутствующего файла молча
@@ -38,6 +46,7 @@ docker_up: | data
 	@test -f servers.yml || { echo "Нет servers.yml — скопируйте servers.example.yml и заполните"; exit 1; }
 	@test -f .env || { echo "Нет .env — скопируйте .env.example и заполните SMTP"; exit 1; }
 	docker compose up -d
+	@$(PRUNE_OLD)
 	@echo "Интерфейс: http://localhost:8000"
 
 data:
