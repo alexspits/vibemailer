@@ -15,6 +15,7 @@
           </TableHead>
 
           <TableHead>Прогресс</TableHead>
+          <TableHead>Серверы</TableHead>
           <TableHead>Создана</TableHead>
           <TableHead>Действия</TableHead>
         </TableRow>
@@ -32,6 +33,7 @@
             <TableCell><Skeleton :class="$style.skSubject" /></TableCell>
             <TableCell><Skeleton :class="$style.skStatus" /></TableCell>
             <TableCell><Skeleton :class="$style.skProgress" /></TableCell>
+            <TableCell><Skeleton :class="$style.skServers" /></TableCell>
             <TableCell><Skeleton :class="$style.skDate" /></TableCell>
             <TableCell><Skeleton :class="$style.skAction" /></TableCell>
           </TableRow>
@@ -40,7 +42,7 @@
         <template v-else>
           <TableEmpty
             v-if="props.campaigns.length === 0"
-            :colspan="7"
+            :colspan="8"
           >
             Кампании не найдены
           </TableEmpty>
@@ -77,6 +79,15 @@
               </span>
 
               <span v-else>—</span>
+            </TableCell>
+
+            <TableCell>
+              <span
+                :title="serversTitle(campaign)"
+                data-test="campaign-servers"
+              >
+                {{ serversLabel(campaign) }}
+              </span>
             </TableCell>
 
             <TableCell>{{ formatDate(campaign.createdAt) }}</TableCell>
@@ -138,7 +149,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, useCssModule } from 'vue';
+import { computed, ref, useCssModule } from 'vue';
 
 import { LoaderCircle, Trash } from '@lucide/vue';
 import { Badge } from '@/components/ui/badge';
@@ -166,16 +177,20 @@ import type {
   CampaignStatus,
   CampaignTotals,
 } from '@/apiService/campaigns/campaignsApiTypes';
+import type { Server } from '@/apiService/servers/serversApiTypes';
 import useDeleteCampaign from '@/composables/data/useDeleteCampaign';
 import useToast from '@/composables/useToast';
 
 interface Props {
   campaigns?: Campaign[];
+  /** Все настроенные серверы: из них считается «сколько из скольких» у рассылки. */
+  servers?: Server[];
   isLoading?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   campaigns: () => [],
+  servers: () => [],
   isLoading: false,
 });
 
@@ -252,6 +267,37 @@ function formatDate(value: string): string {
   });
 }
 
+const enabledServers = computed(() => props.servers.filter((server) => server.enabled));
+
+// Набор рассылки без выключенных — ровно то же правило, по которому бэкенд заводит
+// конфиги. У кампаний, созданных до появления выбора, набор не задан: это все включённые.
+function campaignServers(campaign: Campaign): Server[] {
+  const chosen = campaign.servers;
+
+  return enabledServers.value.filter((server) => !chosen || chosen.includes(server.key));
+}
+
+function serversLabel(campaign: Campaign): string {
+  if (!props.servers.length) {
+    return '—';
+  }
+
+  return `${campaignServers(campaign).length} / ${enabledServers.value.length}`;
+}
+
+function serversTitle(campaign: Campaign): string {
+  if (!props.servers.length) {
+    return '';
+  }
+
+  const chosen = campaignServers(campaign);
+  const names = chosen.map((server) => server.title).join(', ') || 'ни одного';
+
+  return campaign.servers
+    ? `Рассылка идёт на: ${names}`
+    : `Набор не задан — идёт на все включённые: ${names}`;
+}
+
 // Обработано = все получатели, чей статус отличен от «ожидает» (sent + failed).
 // Так прогресс честно отражает, что рассылка прошла по всем, даже если все с ошибкой.
 function processedCount(totals: CampaignTotals): number {
@@ -323,6 +369,11 @@ function processedCount(totals: CampaignTotals): number {
 .skProgress {
   height: 1rem;
   width: 4rem;
+}
+
+.skServers {
+  width: 3rem;
+  height: 1rem;
 }
 
 .skDate {

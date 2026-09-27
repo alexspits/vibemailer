@@ -24,6 +24,7 @@
 
     <CampaignsTable
       :campaigns="campaigns ?? []"
+      :servers="servers ?? []"
       :is-loading="isInitialLoading"
       @deleted="load"
     />
@@ -36,9 +37,14 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import CampaignsTable from '@/components/CampaignsTable.vue';
 import useGetCampaigns from '@/composables/data/useGetCampaigns';
+import useGetServers from '@/composables/data/useGetServers';
 import type { Campaign } from '@/apiService/campaigns/campaignsApiTypes';
 
 const { campaigns, getCampaigns: load, onDone, onError } = useGetCampaigns();
+
+// Серверы читаем один раз: полинг обновляет прогресс рассылок, а список серверов
+// меняется только правкой на соседней странице.
+const { servers, getServers } = useGetServers();
 
 // Скелетоны показываем только при первой загрузке; фоновые опросы обновляют
 // таблицу «тихо», не мигая скелетонами на каждом тике.
@@ -99,7 +105,10 @@ onError(() => {
   syncPolling();
 });
 
-onMounted(load);
+onMounted(() => {
+  load();
+  getServers();
+});
 
 onUnmounted(stopPolling);
 </script>
