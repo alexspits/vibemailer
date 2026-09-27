@@ -120,12 +120,15 @@ def generate_configs(
 ):
     """Ставит в очередь недостающие конфиги — генерацию делает фоновый воркер.
 
-    Без тела (или с пустым `servers`) берутся все включённые серверы — это кнопка
+    Без тела (или с пустым `servers`) берутся все серверы рассылки — это кнопка
     «Сгенерировать все». Со списком — только перечисленные, по кнопке отдельного
     сервера.
     """
     camp = cs.get_campaign(db, campaign_id)
-    server_keys = srv.resolve_keys(payload.servers if payload else None)
+    server_keys = srv.resolve_keys(
+        payload.servers if payload else None,
+        allowed=srv.campaign_keys(camp.servers),
+    )
     queued = cfs.enqueue_campaign_configs(db, camp.id, server_keys)
 
     return ok(MessageOut(detail=f"В очереди на генерацию: {queued}", campaign_id=camp.id))

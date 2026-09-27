@@ -14,6 +14,8 @@ export interface CreateCampaignInput {
   name: string;
   subject: string;
   body: string;
+  /** Ключи серверов рассылки; пусто — все включённые. Потом набор не меняется. */
+  servers: string[];
 }
 
 export interface CampaignTotals {
@@ -29,6 +31,8 @@ export interface Campaign {
   subject: string;
   body: string;
   status: CampaignStatus;
+  /** Серверы рассылки; null — кампания создана до появления выбора, значит все включённые. */
+  servers: string[] | null;
   createdAt: string;
   totals: CampaignTotals | null;
 }
@@ -134,7 +138,7 @@ export type BindSuggestionsResponseWire = components['schemas']['BindSuggestions
 
 export interface GenerateConfigsInput {
   id: number;
-  /** Ключи серверов; пусто — все включённые («Сгенерировать все»). */
+  /** Ключи серверов; пусто — все серверы рассылки («Сгенерировать все»). */
   servers?: string[];
 }
 

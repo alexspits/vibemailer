@@ -4,12 +4,16 @@ import type {
   ServerReadWire,
 } from '../serversApiTypes';
 
-const adaptServer = (server: ServerReadWire): Server => ({
+export const adaptServer = (server: ServerReadWire): Server => ({
   key: server.key,
   title: server.title,
   panel: server.panel,
+  transport: server.transport,
   artifact: server.artifact,
   enabled: server.enabled,
+  where: server.where,
+  configs: server.configs,
+  unfinished: server.unfinished,
 });
 
 const serversListAdapter = {

@@ -195,7 +195,10 @@ def suggest_clients(
     if not recipients:
         return SuggestResult(recipients=[])
 
-    panels = [(server, *_panel_names(server)) for server in srv.enabled_servers()]
+    # Панели только те, на которые идёт эта рассылка: предлагать привязку на сервере,
+    # где строки конфига нет, некуда — привязывать будет нечего.
+    servers = srv.servers_by_keys(srv.campaign_keys(campaign.servers))
+    panels = [(server, *_panel_names(server)) for server in servers]
     taken = _taken_names(db, campaign.id)
     history = _past_bindings(db, campaign.id, {r.email for r in recipients})
 

@@ -21,21 +21,18 @@ import argparse
 import logging
 import sys
 from difflib import get_close_matches
+from typing import TYPE_CHECKING
 
 from app.core.config import get_settings
-from app.core.servers import PanelKind, ServerConfig, TransportKind
+from app.core.servers import PanelKind, ServerConfig
 from app.db.models import Config
 from app.db.session import SessionLocal
 from app.services import server_service as srv
 from app.services.panels import build_panel
-from app.services.panels.amnezia import AmneziaPanel
-from app.services.panels.xui import XuiPanel
+from app.services.panels.amnezia import LATEST_PROTOCOL
 
-# Сколько имён клиентов показывать, чтобы вывод не превращался в простыню.
-SAMPLE = 10
-
-# Самая свежая версия протокола, которую умеет панель AmneziaWG Web UI.
-LATEST_AWG = "AWG 3.1"
+if TYPE_CHECKING:
+    from app.schemas.server import ServerCheck
 
 
 def _servers(keys: list[str]) -> list[ServerConfig]:
@@ -55,93 +52,57 @@ def _servers(keys: list[str]) -> list[ServerConfig]:
 
 def _describe(server: ServerConfig) -> str:
     """Строка заголовка: куда и чем идём."""
-    where = f"ssh {server.ssh.host} → {server.base_url}" if server.ssh else server.base_url
-    return f"[{server.key}] {server.title} — {server.panel}, {where}"
+    return f"[{server.key}] {server.title} — {server.panel}, {srv.describe_where(server)}"
 
 
-def _report_subscription(panel: XuiPanel) -> None:
-    """База ссылки подписки — единственное, что 3x-ui берёт из настроек панели."""
-    # Приватный метод дёргаем осознанно: наружу его выставлять незачем, а проверить
-    # надо именно его — на нём ломается ссылка, если панель стоит за прокси.
-    base = panel._subscription_base()
-    print(f"  подписка: {base}<имя конфига>")
+def _report_clients(result: ServerCheck) -> None:
+    """Сколько клиентов на панели и несколько имён для узнавания."""
+    print(f"  клиентов на панели: {result.clients}")
 
+    if not result.sample:
+        return
 
-# Две ошибки, на которые напарываются при первой настройке: в base_url попадает
-# локальный порт проброса вместо серверного, и не снят verify_tls у панели с
-# сертификатом на домен. По тексту ошибки видно, которая из них.
-def _hint(server: ServerConfig, error: str) -> str | None:
-    """Подсказка к типовой ошибке настройки; None — совет не нашёлся."""
-    if any(sign in error for sign in ("кодом 7", "Connection refused", "onnect to server")):
-        if server.transport is TransportKind.SSH:
-            return (
-                "порт в base_url должен быть тем, что панель слушает на сервере. "
-                "Локальный порт из LocalForward в ~/.ssh/config не подойдёт: "
-                "проброс не нужен, curl запускается на самом сервере."
-            )
-        return "панель не отвечает по этому адресу — проверьте хост и порт."
-
-    if "certificate" in error or "CERTIFICATE" in error or "кодом 60" in error:
-        return (
-            "сертификат выписан на другое имя. Если это самоподписанный сертификат "
-            "панели — verify_tls: false. Если имя чужое, вы скорее всего попали не на "
-            "ту панель: проверьте порт в base_url."
-        )
-
-    return None
-
-
-# Версия AmneziaWG задаётся при создании сервера панели и потом не меняется, а клиент
-# наследует её молча. Показываем явно: иначе «клиента завели» и «клиент получил нужный
-# протокол» — разные вещи, и расхождение всплывёт уже у получателя.
-def _report_protocol(panel: AmneziaPanel) -> None:
-    """Печатает версию протокола, которую получат новые клиенты."""
-    protocol = panel.protocol()
-    note = (
-        ""
-        if protocol == LATEST_AWG
-        else f" (новее — {LATEST_AWG}, но только на новом сервере панели)"
-    )
-
-    print(f"  новые клиенты получат: {protocol}{note}")
+    hidden = (result.clients or 0) - len(result.sample)
+    tail = f" … и ещё {hidden}" if hidden > 0 else ""
+    print(f"  например: {', '.join(result.sample)}{tail}")
 
 
 def _check(server: ServerConfig, name: str) -> bool:
-    """Одна панель: список клиентов и, если просили, поиск имени. True — всё вышло."""
+    """Одна панель: печатает результат пробы. True — всё вышло.
+
+    Сама проба живёт в `server_service.probe_server` — ею же пользуется кнопка
+    «Проверить» в интерфейсе, поэтому диагностика в двух местах не расходится.
+    """
     print(_describe(server))
-    panel = build_panel(server)
+    result = srv.probe_server(server, name)
 
-    try:
-        names = sorted(panel.list_client_names())
-        print(f"  клиентов на панели: {len(names)}")
-
-        if names:
-            shown = ", ".join(names[:SAMPLE])
-            tail = f" … и ещё {len(names) - SAMPLE}" if len(names) > SAMPLE else ""
-            print(f"  например: {shown}{tail}")
-
-        if isinstance(panel, XuiPanel):
-            _report_subscription(panel)
-
-        if isinstance(panel, AmneziaPanel):
-            _report_protocol(panel)
-
-        if name:
-            found = panel.fetch_client(name)
-            print(f"  клиент {name}: {'нашёлся' if found else 'на панели нет'}")
-
-    except Exception as exc:  # noqa: BLE001 - смысл скрипта в том, чтобы показать ошибку
-        print(f"  ОШИБКА: {exc}")
-        advice = _hint(server, str(exc))
-        if advice:
-            print(f"  ПОДСКАЗКА: {advice}")
+    if not result.ok:
+        print(f"  ОШИБКА: {result.error}")
+        if result.hint:
+            print(f"  ПОДСКАЗКА: {result.hint}")
         return False
 
-    else:
-        return True
+    _report_clients(result)
 
-    finally:
-        panel.close()
+    # База ссылки подписки — единственное, что 3x-ui берёт из настроек панели.
+    if result.subscription:
+        print(f"  подписка: {result.subscription}<имя конфига>")
+
+    # Версия AmneziaWG задаётся при создании сервера панели и потом не меняется, а
+    # клиент наследует её молча. Показываем явно: иначе «клиента завели» и «клиент
+    # получил нужный протокол» — разные вещи, и расхождение всплывёт у получателя.
+    if result.protocol:
+        note = (
+            ""
+            if result.protocol == LATEST_PROTOCOL
+            else f" (новее — {LATEST_PROTOCOL}, но только на новом сервере панели)"
+        )
+        print(f"  новые клиенты получат: {result.protocol}{note}")
+
+    if result.client_found is not None:
+        print(f"  клиент {name}: {'нашёлся' if result.client_found else 'на панели нет'}")
+
+    return True
 
 
 # Привязка — это обещание «такой клиент на панели уже есть». Обещание легко нарушить

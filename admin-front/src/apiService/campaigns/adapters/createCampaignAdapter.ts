@@ -11,6 +11,7 @@ const createCampaignAdapter = {
     name: input.name,
     subject: input.subject,
     body: input.body,
+    servers: input.servers,
   }),
 
   adaptResponseData: (response: CreateCampaignResponseWire): Campaign | undefined =>

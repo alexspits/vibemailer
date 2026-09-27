@@ -13,6 +13,10 @@ class CreateCampaign(BaseModel):
     name: str
     subject: str
     body: str
+    # На какие серверы пойдёт рассылка: на них заведутся строки конфигов. Пустой список —
+    # все включённые. Набор задаётся только здесь: исключить сервер после импорта значило
+    # бы удалять уже заведённые строки.
+    servers: list[str] = Field(default_factory=list)
 
 
 class CloneCampaign(BaseModel):
@@ -43,6 +47,8 @@ class CampaignRead(BaseModel):
     subject: str
     body: str
     status: CampaignStatus
+    # Серверы рассылки; None — кампания создана до появления выбора, значит все включённые.
+    servers: list[str] | None = None
     created_at: datetime
     totals: dict | None = None
 

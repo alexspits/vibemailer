@@ -22,6 +22,11 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("vibe_mail.panels.amnezia")
 
+# Самая свежая версия протокола, которую умеет панель. Версия задаётся при создании
+# сервера панели и потом не меняется, поэтому «не последняя» — это повод завести на
+# панели новый сервер, и проверка доступности об этом говорит.
+LATEST_PROTOCOL = "AWG 3.1"
+
 
 class AmneziaPanel(BasePanel):
     """Клиенты AmneziaWG через API панели."""
@@ -87,7 +92,7 @@ class AmneziaPanel(BasePanel):
         server = self._server()
 
         if server.get("awg3_enabled"):
-            return "AWG 3.1"
+            return LATEST_PROTOCOL
 
         if server.get("awg2_enabled"):
             return "AWG 2.0"

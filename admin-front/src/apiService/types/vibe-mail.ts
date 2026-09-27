@@ -109,7 +109,7 @@ export interface paths {
          * Generate Configs
          * @description Ставит в очередь недостающие конфиги — генерацию делает фоновый воркер.
          *
-         *     Без тела (или с пустым `servers`) берутся все включённые серверы — это кнопка
+         *     Без тела (или с пустым `servers`) берутся все серверы рассылки — это кнопка
          *     «Сгенерировать все». Со списком — только перечисленные, по кнопке отдельного
          *     сервера.
          */
@@ -400,7 +400,61 @@ export interface paths {
          */
         get: operations["list_servers_api_servers_get"];
         put?: never;
+        /**
+         * Add Server
+         * @description Дописывает сервер в `servers.yml`. Доступы приезжают сюда и наружу не возвращаются.
+         */
+        post: operations["add_server_api_servers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/servers/{server_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
         post?: never;
+        /**
+         * Delete Server
+         * @description Убирает сервер из конфига.
+         *
+         *     Строки конфигов в прошлых рассылках остаются: это история того, что людям ушло.
+         *     Пока они есть, удаление требует `force` — иначе это происходило бы незаметно.
+         */
+        delete: operations["delete_server_api_servers__server_key__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Server
+         * @description Включает сервер в рассылки по умолчанию или исключает из них.
+         */
+        patch: operations["update_server_api_servers__server_key__patch"];
+        trace?: never;
+    };
+    "/api/servers/{server_key}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Server
+         * @description Проверяет связь с панелью и читает список клиентов. Ничего не меняет.
+         *
+         *     POST, а не GET: ручка поднимает SSH-соединение или сессию панели, и кешировать или
+         *     предзагружать такое браузеру незачем.
+         */
+        post: operations["check_server_api_servers__server_key__check_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -528,6 +582,8 @@ export interface components {
             /** Body */
             body: string;
             status: components["schemas"]["CampaignStatus"];
+            /** Servers */
+            servers?: string[] | null;
             /**
              * Created At
              * Format: date-time
@@ -695,12 +751,14 @@ export interface components {
             subject: string;
             /** Body */
             body: string;
+            /** Servers */
+            servers?: string[];
         };
         /**
          * GenerateConfigsIn
          * @description Тело запроса на генерацию: на каких серверах.
          *
-         *     Пустой список (или отсутствующее тело) — все включённые серверы, то есть кнопка
+         *     Пустой список (или отсутствующее тело) — все серверы рассылки, то есть кнопка
          *     «Сгенерировать все».
          */
         GenerateConfigsIn: {
@@ -935,6 +993,31 @@ export interface components {
             error?: string | null;
         };
         /**
+         * PanelAuth
+         * @description Доступ к API панели.
+         *
+         *     У 3x-ui это Bearer-токен из Settings → Security → API Token (на старых версиях
+         *     токена нет — там логин с паролем и cookie-сессия). У wg-easy v15 — логин и пароль
+         *     от веб-морды через Basic Auth. У AmneziaWG — логин и пароль от панели.
+         */
+        PanelAuth: {
+            /**
+             * Token
+             * @default
+             */
+            token: string;
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+        };
+        /**
          * PanelKind
          * @description Тип панели на сервере — определяет, каким адаптером с ним говорить.
          * @enum {string}
@@ -1043,6 +1126,143 @@ export interface components {
             text: string;
         };
         /**
+         * ServerCheck
+         * @description Результат проверки доступности панели. Ничего на сервере не меняет.
+         */
+        ServerCheck: {
+            /** Key */
+            key: string;
+            /** Ok */
+            ok: boolean;
+            /** Clients */
+            clients?: number | null;
+            /**
+             * Sample
+             * @default []
+             */
+            sample: string[];
+            /**
+             * Protocol
+             * @default
+             */
+            protocol: string;
+            /**
+             * Subscription
+             * @default
+             */
+            subscription: string;
+            /** Client Found */
+            client_found?: boolean | null;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /**
+             * Elapsed Ms
+             * @default 0
+             */
+            elapsed_ms: number;
+        };
+        /**
+         * ServerCheckEnvelope
+         * @description Обёртка результата проверки доступности панели.
+         */
+        ServerCheckEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["ServerCheck"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * ServerCreate
+         * @description Тело запроса на добавление сервера.
+         *
+         *     Ровно тот же набор полей, что и в `servers.yml`: проверки («при transport=ssh нужен
+         *     блок ssh», «для 3x-ui нужен inbound_ids») уже написаны валидатором модели, и
+         *     дублировать их отдельной схемой значило бы разойтись с файлом при первой же правке.
+         */
+        ServerCreate: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            panel: components["schemas"]["PanelKind"];
+            transport: components["schemas"]["TransportKind"];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Base Url
+             * @default http://127.0.0.1:8080
+             */
+            base_url: string;
+            ssh?: components["schemas"]["SshConfig"] | null;
+            auth?: components["schemas"]["PanelAuth"];
+            /** Inbound Ids */
+            inbound_ids?: number[];
+            /**
+             * Flow
+             * @default
+             */
+            flow: string;
+            /**
+             * Sub Base
+             * @default
+             */
+            sub_base: string;
+            /** Name Suffixes */
+            name_suffixes?: string[];
+            /**
+             * Panel Server Id
+             * @default
+             */
+            panel_server_id: string;
+            /**
+             * Verify Tls
+             * @default true
+             */
+            verify_tls: boolean;
+            artifact?: components["schemas"]["ArtifactKind"] | null;
+        };
+        /**
+         * ServerDeleted
+         * @description Ответ на удаление сервера из конфига.
+         */
+        ServerDeleted: {
+            /** Detail */
+            detail: string;
+            /** Key */
+            key: string;
+        };
+        /**
+         * ServerDeletedEnvelope
+         * @description Обёртка результата удаления сервера из конфига.
+         */
+        ServerDeletedEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["ServerDeleted"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
          * ServerRead
          * @description Ответ: один настроенный сервер.
          */
@@ -1052,9 +1272,37 @@ export interface components {
             /** Title */
             title: string;
             panel: components["schemas"]["PanelKind"];
+            transport: components["schemas"]["TransportKind"];
             artifact: components["schemas"]["ArtifactKind"];
             /** Enabled */
             enabled: boolean;
+            /** Where */
+            where: string;
+            /**
+             * Configs
+             * @default 0
+             */
+            configs: number;
+            /**
+             * Unfinished
+             * @default 0
+             */
+            unfinished: number;
+        };
+        /**
+         * ServerReadEnvelope
+         * @description Обёртка одного VPN-сервера.
+         */
+        ServerReadEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["ServerRead"] | null;
+            /** Error */
+            error?: string | null;
         };
         /**
          * ServerSuggestion
@@ -1076,6 +1324,54 @@ export interface components {
             candidates: components["schemas"]["ClientCandidate"][];
             /** Error */
             error?: string | null;
+        };
+        /**
+         * SshConfig
+         * @description Как подключаться к серверу по SSH.
+         *
+         *     `host` — либо алиас из `~/.ssh/config`, либо обычное имя хоста. Всё, что задано
+         *     здесь явно, перекрывает найденное в `~/.ssh/config`.
+         */
+        SshConfig: {
+            /** Host */
+            host: string;
+            /**
+             * Use Ssh Config
+             * @default true
+             */
+            use_ssh_config: boolean;
+            /**
+             * Config Path
+             * @default ~/.ssh/config
+             */
+            config_path: string;
+            /**
+             * User
+             * @default
+             */
+            user: string;
+            /** Port */
+            port?: number | null;
+            /**
+             * Key File
+             * @default
+             */
+            key_file: string;
+            /**
+             * Key Passphrase
+             * @default
+             */
+            key_passphrase: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+            /**
+             * Timeout
+             * @default 30
+             */
+            timeout: number;
         };
         /**
          * SuggestClientsIn
@@ -1120,6 +1416,12 @@ export interface components {
             error?: string | null;
         };
         /**
+         * TransportKind
+         * @description Как достучаться до API панели.
+         * @enum {string}
+         */
+        TransportKind: "ssh" | "direct";
+        /**
          * UpdateCampaign
          * @description Правка кампании до запуска: меняется только переданное.
          */
@@ -1130,6 +1432,14 @@ export interface components {
             subject?: string | null;
             /** Body */
             body?: string | null;
+        };
+        /**
+         * UpdateServer
+         * @description Тело запроса на включение сервера в рассылки по умолчанию или исключение из них.
+         */
+        UpdateServer: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -1915,6 +2225,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListServerReadEnvelope"];
+                };
+            };
+        };
+    };
+    add_server_api_servers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerReadEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_server_api_servers__server_key__delete: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                server_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDeletedEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_server_api_servers__server_key__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateServer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerReadEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_server_api_servers__server_key__check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerCheckEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

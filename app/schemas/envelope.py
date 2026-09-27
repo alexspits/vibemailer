@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from app.schemas.campaign import CampaignRead, MessageOut
 from app.schemas.import_recipients import ImportPreview, ImportResult
 from app.schemas.recipient import ConfigRead, RecipientRead
-from app.schemas.server import ServerRead
+from app.schemas.server import ServerCheck, ServerDeleted, ServerRead
 from app.schemas.suggest import BindSuggestionsResult, SuggestResult
 
 
@@ -63,8 +63,20 @@ class ImportResultEnvelope(ApiEnvelope[ImportResult]):
     """Обёртка результата импорта получателей."""
 
 
+class ServerReadEnvelope(ApiEnvelope[ServerRead]):
+    """Обёртка одного VPN-сервера."""
+
+
 class ListServerReadEnvelope(ApiEnvelope[list[ServerRead]]):
     """Обёртка списка настроенных VPN-серверов."""
+
+
+class ServerCheckEnvelope(ApiEnvelope[ServerCheck]):
+    """Обёртка результата проверки доступности панели."""
+
+
+class ServerDeletedEnvelope(ApiEnvelope[ServerDeleted]):
+    """Обёртка результата удаления сервера из конфига."""
 
 
 class ListPanelClientsEnvelope(ApiEnvelope[list[str]]):

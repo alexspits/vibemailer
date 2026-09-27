@@ -84,8 +84,63 @@
         </FormItem>
       </FormField>
 
+      <div :class="$style.serversBlock">
+        <Label>Серверы рассылки</Label>
+
+        <p :class="$style.hint">
+          Конфиги заведутся только на отмеченных серверах. Набор потом не меняется:
+          исключить сервер позже — значит удалять уже заведённые строки конфигов.
+        </p>
+
+        <div
+          v-if="isServersLoading && !enabledServers.length"
+          :class="$style.hint"
+        >
+          Загружаем список серверов…
+        </div>
+
+        <p
+          v-else-if="!enabledServers.length"
+          :class="$style.error"
+          data-test="no-servers-note"
+        >
+          Включённых серверов нет — заведите их на странице «Серверы», иначе конфиги
+          заводить будет негде.
+        </p>
+
+        <label
+          v-for="server in enabledServers"
+          :key="server.key"
+          :class="$style.serverRow"
+          data-test="server-checkbox-row"
+        >
+          <Checkbox
+            :model-value="selectedKeys.includes(server.key)"
+            :disabled="isLoading"
+            data-test="server-checkbox"
+            @update:model-value="(value) => toggleServer(server.key, value === true)"
+          />
+
+          <span>
+            {{ server.title }}
+
+            <span :class="$style.serverMeta">
+              · {{ server.key }} · {{ server.artifact === 'file' ? 'файл' : 'ссылка подписки' }}
+            </span>
+          </span>
+        </label>
+
+        <p
+          v-if="enabledServers.length && !selectedKeys.length"
+          :class="$style.error"
+          data-test="servers-error"
+        >
+          Выберите хотя бы один сервер.
+        </p>
+      </div>
+
       <Button
-        :disabled="isLoading"
+        :disabled="isSubmitDisabled"
         type="submit"
         data-test="submit-button"
       >
@@ -101,6 +156,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue';
+
 import { toTypedSchema } from '@vee-validate/zod';
 import { useForm } from 'vee-validate';
 import { useRouter } from 'vue-router';
@@ -108,6 +165,7 @@ import { z } from 'zod';
 
 import { LoaderCircle } from '@lucide/vue';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   FormControl,
   FormField,
@@ -116,14 +174,39 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import useCreateCampaign from '@/composables/data/useCreateCampaign';
+import useGetServers from '@/composables/data/useGetServers';
 import useToast from '@/composables/useToast';
 
 const router = useRouter();
 const toast = useToast();
 
 const { isLoading, createCampaign, onDone } = useCreateCampaign();
+const { isLoading: isServersLoading, servers, getServers, onDone: onServersLoaded } = useGetServers();
+
+// Набор серверов держим отдельным ref, а не полем формы: галочек столько, сколько
+// серверов, и zod-схеме тут делать нечего — проверка одна, «хотя бы один».
+const selectedKeys = ref<string[]>([]);
+
+const enabledServers = computed(() => (servers.value ?? []).filter((server) => server.enabled));
+
+const isSubmitDisabled = computed(() => isLoading.value || !selectedKeys.value.length);
+
+function toggleServer(key: string, checked: boolean): void {
+  selectedKeys.value = checked
+    ? [...selectedKeys.value, key]
+    : selectedKeys.value.filter((item) => item !== key);
+}
+
+// По умолчанию отмечены все включённые: обычная рассылка идёт на все панели, а
+// исключение — редкий случай.
+onServersLoaded(() => {
+  selectedKeys.value = enabledServers.value.map((server) => server.key);
+});
+
+onMounted(getServers);
 
 const formSchema = toTypedSchema(
   z.object({
@@ -144,7 +227,11 @@ const formSchema = toTypedSchema(
 const { handleSubmit } = useForm({ validationSchema: formSchema });
 
 const onSubmit = handleSubmit((values) => {
-  createCampaign(values);
+  if (!selectedKeys.value.length) {
+    return;
+  }
+
+  createCampaign({ ...values, servers: selectedKeys.value });
 });
 
 onDone(() => {
@@ -183,6 +270,36 @@ function goBack() {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.serversBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.serverRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.serverMeta {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.hint {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.error {
+  color: var(--destructive);
+  font-size: 0.875rem;
 }
 
 .spinner {

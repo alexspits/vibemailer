@@ -180,6 +180,19 @@
       </div>
 
       <div :class="$style.fullWidth">
+        <p :class="$style.label">
+          Серверы рассылки
+        </p>
+
+        <p
+          :class="$style.value"
+          data-test="campaign-servers"
+        >
+          {{ campaignServersLabel }}
+        </p>
+      </div>
+
+      <div :class="$style.fullWidth">
         <div :class="$style.labelRow">
           <p :class="$style.label">
             Текст письма
@@ -489,6 +502,7 @@
     <AddConfigsDialog
       v-model:open="isAddConfigsOpen"
       :recipient="addConfigsTarget"
+      :servers="serversList"
       @added="load"
     />
 
@@ -652,13 +666,28 @@ const {
   getServers,
 } = useGetServers();
 
-// Выключенные серверы не показываем: конфиги на них не заводятся, и кнопка была бы
-// заведомо неактивной.
-const serversList = computed(() => (servers.value ?? []).filter((server) => server.enabled));
+// Показываем только серверы этой рассылки, да ещё и включённые: на остальных конфиги
+// не заводятся и не генерируются, и кнопка была бы заведомо неактивной. У кампаний,
+// созданных до появления выбора, набор не задан — там это все включённые.
+const serversList = computed(() => {
+  const chosen = campaign.value?.servers;
+
+  return (servers.value ?? []).filter(
+    (server) => server.enabled && (!chosen || chosen.includes(server.key)),
+  );
+});
 
 const serverTitles = computed(
   () => new Map(serversList.value.map((server) => [server.key, server.title])),
 );
+
+const campaignServersLabel = computed(() => {
+  if (!serversList.value.length) {
+    return 'ни одного включённого — конфиги заводить негде';
+  }
+
+  return serversList.value.map((server) => `${server.title} (${server.key})`).join(', ');
+});
 
 function serverTitle(serverKey: string): string {
   // Сервер мог исчезнуть из конфига уже после того, как конфиг завели, —

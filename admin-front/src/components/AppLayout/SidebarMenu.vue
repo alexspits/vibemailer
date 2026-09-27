@@ -23,7 +23,7 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router';
-import { Home, Inbox } from '@lucide/vue';
+import { Home, Inbox, Server } from '@lucide/vue';
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -40,6 +40,7 @@ interface NavItem {
 
 const items: NavItem[] = [
   { title: 'Кампании', url: '/campaigns', icon: Home },
+  { title: 'Серверы', url: '/servers', icon: Server },
   { title: 'Тестовая страница', url: '/test', icon: Inbox },
 ];
 

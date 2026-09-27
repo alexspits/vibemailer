@@ -13,8 +13,8 @@
 и ронять импорт, когда сервер недоступен.
 
 Базовое имя у получателя одно, а сами конфиги нумеруются от него: `alice` и количество
-3 дают `alice1`, `alice2`, `alice3`, и каждое имя заводится на каждом включённом
-сервере. Номер есть всегда, даже у единственного конфига: иначе добавление второго
+3 дают `alice1`, `alice2`, `alice3`, и каждое имя заводится на каждом сервере рассылки
+(набор выбран при её создании). Номер есть всегда, даже у единственного конфига: иначе добавление второго
 потребовало бы переименовать первый, а в AmneziaWG переименования нет.
 
 Две строки с одной почтой и разными базовыми именами — противоречие: первая выигрывает,
@@ -113,7 +113,7 @@ def _normalize_text(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n").translate(_INVISIBLE)
 
 
-def _parse_line(lineno: int, raw_line: str) -> ParsedRow | ImportRowProblem | None:
+def _parse_line(lineno: int, raw_line: str, keys: list[str]) -> ParsedRow | ImportRowProblem | None:
     """Разбирает одну строку вставки.
 
     `None` — пустая строка (пропускаем молча), `ImportRowProblem` — строку принять нельзя,
@@ -140,13 +140,13 @@ def _parse_line(lineno: int, raw_line: str) -> ParsedRow | ImportRowProblem | No
     raw_bindings = cells[3] if len(cells) > 3 else ""
 
     count = _parse_count(raw_count)
-    bindings = _parse_bindings(raw_bindings)
+    bindings = _parse_bindings(raw_bindings, keys)
 
     reason = _field_problem(client_name, email, raw_count, count)
     if reason is None and bindings is None:
         reason = (
             f"привязку {raw_bindings!r} не разобрать: ожидается «ключ_сервера:имя», "
-            f"несколько — через запятую; известные серверы: {', '.join(srv.enabled_keys())}"
+            f"несколько — через запятую; серверы этой рассылки: {', '.join(keys)}"
         )
 
     if reason is not None:
@@ -155,16 +155,17 @@ def _parse_line(lineno: int, raw_line: str) -> ParsedRow | ImportRowProblem | No
     return ParsedRow(client_name=client_name, email=email, count=count, bindings=bindings)
 
 
-def _parse_bindings(raw: str) -> dict[str, str] | None:
+def _parse_bindings(raw: str, keys: list[str]) -> dict[str, str] | None:
     """Разбирает четвёртую колонку: `ru:adonm` либо несколько через запятую.
 
-    Пусто — привязок нет. Мусор или неизвестный сервер — None, строка уйдёт в проблемы.
+    Пусто — привязок нет. Мусор или сервер не из этой рассылки — None, строка уйдёт
+    в проблемы.
     """
     if not raw:
         return {}
 
     bindings: dict[str, str] = {}
-    enabled = set(srv.enabled_keys())
+    enabled = set(keys)
 
     for chunk in raw.split(_BINDING_SEPARATOR):
         server_key, delimiter, panel_name = chunk.strip().partition(_BINDING_DELIMITER)
@@ -294,7 +295,9 @@ def _add_row(
     return None
 
 
-def parse_recipients_text(text: str) -> tuple[list[ParsedGroup], list[ImportRowProblem]]:
+def parse_recipients_text(
+    text: str, keys: list[str]
+) -> tuple[list[ParsedGroup], list[ImportRowProblem]]:
     """Разбирает вставленный текст в пары «почта → имя клиента» и список проблем.
 
     Почта приводится к нижнему регистру, поэтому строки, отличающиеся только регистром
@@ -307,7 +310,7 @@ def parse_recipients_text(text: str) -> tuple[list[ParsedGroup], list[ImportRowP
     problems: list[ImportRowProblem] = []
 
     for lineno, raw_line in enumerate(_normalize_text(text).split("\n"), start=1):
-        row = _parse_line(lineno, raw_line)
+        row = _parse_line(lineno, raw_line, keys)
 
         if row is None:
             continue
@@ -333,7 +336,7 @@ def _get_existing_recipients(db: Session, campaign_id: int) -> dict[str, Recipie
     return {r.email.lower(): r for r in recipients}
 
 
-def _target_count(group: ParsedGroup, recipient: Recipient | None) -> int:
+def _target_count(group: ParsedGroup, recipient: Recipient | None, keys: list[str]) -> int:
     """Сколько конфигов должно стать у получателя.
 
     Уменьшить количество импорт не может: клиенты уже заведены на панелях, и удалять
@@ -344,38 +347,32 @@ def _target_count(group: ParsedGroup, recipient: Recipient | None) -> int:
     до пяти, и повторный импорт той же строки завёл бы ему по пять конфигов на всех
     остальных серверах — с четырьмя лишними клиентами на каждой панели.
     """
-    return max(group.count, _shortest_row(recipient))
+    return max(group.count, _shortest_row(recipient, keys))
 
 
-def _shortest_row(recipient: Recipient | None) -> int:
-    """Сколько конфигов есть у получателя на самом бедном из включённых серверов."""
+def _shortest_row(recipient: Recipient | None, keys: list[str]) -> int:
+    """Сколько конфигов есть у получателя на самом бедном из серверов рассылки."""
     if recipient is None:
         return 0
 
-    counts = [
-        sum(1 for config in recipient.configs if config.server_key == key)
-        for key in srv.enabled_keys()
-    ]
+    counts = [sum(1 for config in recipient.configs if config.server_key == key) for key in keys]
 
     return min(counts, default=0)
 
 
-def _missing_pairs(recipient: Recipient | None, target: int) -> list[tuple[int, str]]:
+def _missing_pairs(
+    recipient: Recipient | None, target: int, keys: list[str]
+) -> list[tuple[int, str]]:
     """Пары «номер конфига — сервер», которых у получателя ещё нет.
 
-    Так одним механизмом закрываются оба случая: человеку добавили конфигов, и в
-    `servers.yml` добавили сервер — недостающее дозаводится при повторном импорте.
+    Так одним механизмом закрываются оба случая: человеку добавили конфигов, и у
+    рассылки появился сервер — недостающее дозаводится при повторном импорте.
     """
     known = (
         {(config.seq, config.server_key) for config in recipient.configs} if recipient else set()
     )
 
-    return [
-        (seq, key)
-        for seq in range(1, target + 1)
-        for key in srv.enabled_keys()
-        if (seq, key) not in known
-    ]
+    return [(seq, key) for seq in range(1, target + 1) for key in keys if (seq, key) not in known]
 
 
 def _reject_taken_names(
@@ -439,10 +436,12 @@ def _binding_problem(
     return None
 
 
-def _build_preview_group(group: ParsedGroup, recipient: Recipient | None) -> ImportGroup:
+def _build_preview_group(
+    group: ParsedGroup, recipient: Recipient | None, keys: list[str]
+) -> ImportGroup:
     """Одна строка предпросмотра: что реально появится у этого получателя."""
-    target = _target_count(group, recipient)
-    pairs = _missing_pairs(recipient, target)
+    target = _target_count(group, recipient, keys)
+    pairs = _missing_pairs(recipient, target, keys)
     base_name = recipient.client_name if recipient else group.client_name
 
     return ImportGroup(
@@ -465,13 +464,16 @@ def build_preview(db: Session, campaign_id: int, text: str) -> ImportPreview:
     У уже заведённого получателя имя клиента не меняется — в `existing_client_name`
     видно, какое останется.
     """
-    groups, problems = parse_recipients_text(text)
+    keys = srv.keys_for_campaign(db, campaign_id)
+    groups, problems = parse_recipients_text(text, keys)
     existing = _get_existing_recipients(db, campaign_id)
 
     groups, taken_problems = _reject_taken_names(groups, existing)
     problems.extend(taken_problems)
 
-    preview_groups = [_build_preview_group(group, existing.get(group.email)) for group in groups]
+    preview_groups = [
+        _build_preview_group(group, existing.get(group.email), keys) for group in groups
+    ]
 
     return ImportPreview(
         groups=preview_groups,
@@ -483,13 +485,17 @@ def build_preview(db: Session, campaign_id: int, text: str) -> ImportPreview:
 
 
 def _apply_group(
-    db: Session, campaign_id: int, group: ParsedGroup, existing: dict[str, Recipient]
+    db: Session,
+    campaign_id: int,
+    group: ParsedGroup,
+    existing: dict[str, Recipient],
+    keys: list[str],
 ) -> _GroupOutcome:
     """Заводит получателя (если нужно) и дописывает недостающие конфиги."""
     recipient = existing.get(group.email)
     is_created = recipient is None
-    target = _target_count(group, recipient)
-    missing = _missing_pairs(recipient, target)
+    target = _target_count(group, recipient, keys)
+    missing = _missing_pairs(recipient, target, keys)
 
     if recipient is None:
         recipient = Recipient(
@@ -505,7 +511,7 @@ def _apply_group(
         # клиенты на панелях. Меняется только количество, и только в большую сторону.
         recipient.config_count = target
 
-    servers = {server.key: server for server in srv.enabled_servers()}
+    servers = {server.key: server for server in srv.servers_by_keys(keys)}
     recipient.configs.extend(
         Config(seq=seq, server_key=key, kind=servers[key].artifact_kind) for seq, key in missing
     )
@@ -553,16 +559,17 @@ def import_recipients(db: Session, campaign_id: int, text: str) -> ImportResult:
     Импорт частичный: валидные строки сохраняются, проблемные возвращаются списком.
     Если почта уже есть в кампании, базовое имя остаётся прежним, а дозаводится только
     недостающее — новые номера конфигов и новые серверы. Поэтому повторный импорт того
-    же списка ничего не меняет, а увеличенное количество или добавленный в `servers.yml`
+    же списка ничего не меняет, а увеличенное количество или появившийся у рассылки
     сервер подхватываются импортом.
     """
-    groups, problems = parse_recipients_text(text)
+    keys = srv.keys_for_campaign(db, campaign_id)
+    groups, problems = parse_recipients_text(text, keys)
     existing = _get_existing_recipients(db, campaign_id)
 
     groups, taken_problems = _reject_taken_names(groups, existing)
     problems.extend(taken_problems)
 
-    outcomes = [_apply_group(db, campaign_id, group, existing) for group in groups]
+    outcomes = [_apply_group(db, campaign_id, group, existing, keys) for group in groups]
     db.commit()
 
     return ImportResult(

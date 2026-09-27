@@ -96,7 +96,7 @@ def _build_recipients(status: CampaignStatus, index: int) -> list[Recipient]:
             error=error,
             sent_at=sent_at,
         )
-        # Каждый номер конфига на каждом включённом сервере — как это делает импорт.
+        # Каждый номер конфига на каждом сервере рассылки — как это делает импорт.
         config_count = random.randint(1, 3)
         recipient.config_count = config_count
         recipient.configs = [
@@ -229,6 +229,7 @@ def seed(db: Session) -> tuple[int, int]:
             name=name,
             subject=subject,
             body=body,
+            servers=srv.enabled_keys(),
             status=status,
             created_at=_days_ago(days),
         )

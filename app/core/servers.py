@@ -188,3 +188,12 @@ def load_servers(path: str) -> ServersConfig:
 def get_servers(path: str) -> ServersConfig:
     """Кешированный список серверов: файл читается один раз за жизнь процесса."""
     return load_servers(path)
+
+
+def reload_servers() -> None:
+    """Сбрасывает кеш: файл правится из интерфейса, и процесс должен увидеть правку.
+
+    Перезапуск для этого не нужен, но и перечитывать файл на каждый запрос незачем —
+    сбрасываем ровно после записи (`core.servers_file`).
+    """
+    get_servers.cache_clear()

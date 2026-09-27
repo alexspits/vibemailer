@@ -4,6 +4,7 @@ import datetime
 import enum
 
 from sqlalchemy import (
+    JSON,
     DateTime,
     ForeignKey,
     Integer,
@@ -70,6 +71,11 @@ class Campaign(Base):
     status: Mapped[CampaignStatus] = mapped_column(
         SAEnum(CampaignStatus), default=CampaignStatus.NEW
     )
+    # Ключи серверов, на которые идёт эта рассылка: на них и только на них заводятся
+    # строки конфигов. Набор выбирается при создании и потом не меняется — исключить
+    # сервер позже значило бы удалять уже заведённые строки, а то и живых клиентов
+    # с панели. NULL — кампания создана до появления выбора, значит все включённые.
+    servers: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     recipients: Mapped[list["Recipient"]] = relationship(

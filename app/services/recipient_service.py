@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.constants import EMAIL_RE
+from app.core.servers import ServerConfig
 from app.db.models import Campaign, Config, Recipient, RecipientStatus
 from app.schemas.recipient import RecipientCreate
 from app.services import server_service as srv
@@ -21,16 +22,18 @@ def _normalize_email(raw: str) -> str:
     return raw.strip().lower()
 
 
-def build_configs(seq_numbers: range | list[int]) -> list[Config]:
-    """Пустые конфиги: каждый порядковый номер на каждом включённом сервере."""
+def build_configs(seq_numbers: range | list[int], servers: list[ServerConfig]) -> list[Config]:
+    """Пустые конфиги: каждый порядковый номер на каждом сервере рассылки."""
     return [
         Config(seq=seq, server_key=server.key, kind=server.artifact_kind)
         for seq in seq_numbers
-        for server in srv.enabled_servers()
+        for server in servers
     ]
 
 
-def _build_recipient(campaign_id: int, item: RecipientCreate, email: str) -> Recipient:
+def _build_recipient(
+    campaign_id: int, item: RecipientCreate, email: str, servers: list[ServerConfig]
+) -> Recipient:
     """Собирает получателя вместе с его (пока пустыми) конфигами."""
     recipient = Recipient(
         campaign_id=campaign_id,
@@ -40,7 +43,7 @@ def _build_recipient(campaign_id: int, item: RecipientCreate, email: str) -> Rec
         config_count=item.count,
         status=RecipientStatus.PENDING,
     )
-    recipient.configs = build_configs(range(1, item.count + 1))
+    recipient.configs = build_configs(range(1, item.count + 1), servers)
     return recipient
 
 
@@ -49,6 +52,7 @@ def _validate_items(
     items: list[RecipientCreate],
     known_emails: set[str],
     known_names: set[str],
+    servers: list[ServerConfig],
 ) -> tuple[list[Recipient], list[str]]:
     """Проверяет пакет и собирает получателей к созданию.
 
@@ -85,7 +89,7 @@ def _validate_items(
 
         seen.add(email)
         seen_names.add(client_name.lower())
-        to_create.append(_build_recipient(campaign_id, item, email))
+        to_create.append(_build_recipient(campaign_id, item, email, servers))
 
     return to_create, problems
 
@@ -114,7 +118,8 @@ def add_recipients(db: Session, campaign_id: int, items: list[RecipientCreate]) 
     """
     known_emails = _existing_emails(db, campaign_id)
     known_names = _existing_client_names(db, campaign_id)
-    to_create, problems = _validate_items(campaign_id, items, known_emails, known_names)
+    servers = srv.servers_by_keys(srv.keys_for_campaign(db, campaign_id))
+    to_create, problems = _validate_items(campaign_id, items, known_emails, known_names, servers)
 
     if problems:
         raise HTTPException(status_code=400, detail={"errors": problems})
@@ -141,8 +146,9 @@ def add_configs(
     следующем импорте молча получить дубли.
     """
     recipient = get_recipient(db, recipient_id)
-    keys = srv.resolve_keys(server_keys)
-    servers = {server.key: server for server in srv.enabled_servers()}
+    allowed = srv.keys_for_campaign(db, recipient.campaign_id)
+    keys = srv.resolve_keys(server_keys, allowed=allowed)
+    servers = {server.key: server for server in srv.servers_by_keys(keys)}
 
     for key in keys:
         last = max((c.seq for c in recipient.configs if c.server_key == key), default=0)
@@ -154,7 +160,7 @@ def add_configs(
     if not recipient.configs:
         raise HTTPException(
             status_code=400,
-            detail="Не на чем заводить конфиги: в servers.yml нет включённых серверов",
+            detail="Не на чем заводить конфиги: у рассылки нет ни одного включённого сервера",
         )
 
     recipient.config_count = max(config.seq for config in recipient.configs)
@@ -225,10 +231,39 @@ def validate_campaign_ready(db: Session, campaign: Campaign) -> list[str]:
     recipients = db.query(Recipient).filter_by(campaign_id=campaign.id).all()
 
     problems: list[str] = [] if recipients else ["В кампании нет получателей"]
+    keys = srv.campaign_keys(campaign.servers)
 
-    if not srv.enabled_servers():
-        problems.append("В конфиге нет ни одного включённого сервера")
+    if not keys:
+        problems.append("У рассылки нет ни одного включённого сервера")
+
+    problems.extend(_orphan_server_problems(recipients, keys))
+
     for recipient in recipients:
         problems.extend(_recipient_problems(recipient))
 
     return problems
+
+
+def _orphan_server_problems(recipients: list[Recipient], keys: list[str]) -> list[str]:
+    """Конфиги на серверах, которых в рассылке больше нет.
+
+    Сервер могли выключить или удалить из конфига уже после импорта. Кнопок генерации у
+    таких строк нет, готовыми они не станут, и без отдельного объяснения рассылка просто
+    молча не запускалась бы: в списке проблем было бы «конфиг не сгенерирован», а сервера
+    под него в интерфейсе не найти.
+    """
+    known = set(keys)
+    orphans = sorted(
+        {
+            config.server_key
+            for recipient in recipients
+            for config in recipient.configs
+            if config.server_key not in known and not config.is_ready
+        }
+    )
+
+    return [
+        f"Сервер {key} выключен или удалён, а его конфиги в рассылке остались — "
+        "включите сервер или удалите эти строки в таблице получателей"
+        for key in orphans
+    ]

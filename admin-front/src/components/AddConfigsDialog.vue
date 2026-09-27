@@ -22,7 +22,7 @@
           data-test="add-configs-servers"
         >
           <button
-            v-for="server in enabledServers"
+            v-for="server in props.servers"
             :key="server.key"
             :class="[$style.serverRow, selected.has(server.key) ? $style.serverRowActive : '']"
             type="button"
@@ -84,27 +84,25 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import useAddConfigs from '@/composables/data/useAddConfigs';
-import useGetServers from '@/composables/data/useGetServers';
 import useToast from '@/composables/useToast';
 import type { Recipient } from '@/apiService/recipients/recipientsApiTypes';
+import type { Server } from '@/apiService/servers/serversApiTypes';
 
 interface Props {
   recipient: Recipient | null;
+  /** Серверы рассылки: на остальных бэкенд отвергнет запрос целиком, и не добавится
+   *  ничего, даже для отмеченных рядом рабочих. Список берём у страницы, она его уже
+   *  прочитала. */
+  servers?: Server[];
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), { servers: () => [] });
 
 const emit = defineEmits<{ added: [] }>();
 
 const isOpen = defineModel<boolean>('open', { default: false });
 
 const toast = useToast();
-
-const { servers, getServers } = useGetServers();
-
-// Выключенные сервера в списке — ловушка: бэкенд отвергает запрос целиком, и не
-// добавится ничего, даже для отмеченных рядом рабочих.
-const enabledServers = computed(() => (servers.value ?? []).filter((server) => server.enabled));
 
 const {
   isLoading,
@@ -186,12 +184,10 @@ onDone(() => {
   emit('added');
 });
 
-// Серверы тянем на открытии: список включённых меняется только правкой servers.yml.
 watch(isOpen, (opened) => {
   if (opened) {
     selected.value = new Set();
     count.value = '1';
-    getServers();
   }
 });
 </script>

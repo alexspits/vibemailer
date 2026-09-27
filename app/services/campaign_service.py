@@ -14,13 +14,21 @@ from app.db.models import (
 )
 from app.schemas.campaign import CloneCampaign, CreateCampaign, UpdateCampaign
 from app.services import config_service as cfs
+from app.services import server_service as srv
 
 
 def create_campaign(db: Session, data: CreateCampaign) -> Campaign:
+    """Создаёт кампанию вместе с набором серверов, на которые она пойдёт.
+
+    Набор сохраняется перечислением, а не пустотой «все включённые»: иначе добавленный
+    в `servers.yml` пятый сервер сам появился бы в уже созданной рассылке, и при
+    следующем импорте людям завелись бы конфиги там, где их не просили.
+    """
     campaign = Campaign(
         name=data.name,
         subject=data.subject,
         body=data.body,
+        servers=srv.resolve_keys(data.servers),
         status=CampaignStatus.NEW,
     )
     db.add(campaign)
@@ -46,6 +54,9 @@ def clone_campaign(db: Session, campaign_id: int, data: CloneCampaign) -> Campai
         name=data.name,
         subject=data.subject if data.subject is not None else source.subject,
         body=data.body if data.body is not None else source.body,
+        # Набор серверов тоже от образца: копируются его строки конфигов, и заводиться
+        # новые должны там же, где у него.
+        servers=source.servers,
         status=CampaignStatus.NEW,
     )
     db.add(campaign)

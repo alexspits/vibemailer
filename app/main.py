@@ -18,6 +18,7 @@ from app.api import campaigns, configs, health, recipients, servers
 from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.db.base import Base
+from app.db.migrate import add_missing_columns
 from app.db.session import engine
 from app.schemas.envelope import ApiEnvelope
 from app.services.config_worker import ConfigWorker
@@ -56,6 +57,9 @@ async def lifespan(app: FastAPI):
     setup_logging()
     # MVP: создаём таблицы, если их нет (позже заменит Alembic).
     Base.metadata.create_all(engine)
+    # create_all существующие таблицы не меняет, а пересоздавать боевую базу нельзя:
+    # в ней выданные конфиги и привязки к клиентам панелей.
+    add_missing_columns(engine)
 
     _start_workers(app, get_settings())
     yield
