@@ -1,0 +1,77 @@
+---
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  Первичная настройка VPN-сервера (Ubuntu 22.04 / 24.04)                 │
+# │                                                                         │
+# │  ansible-galaxy collection install -r requirements.yml                  │
+# │                                                                         │
+# │  Первый запуск (сервер свежий, root на порту 22):                       │
+# │    ansible-playbook site.yml -l de2_server -k                          │
+# │    (-k — если root входит по паролю; с ключом не нужен)                 │
+# │    Пароль для VNC-консоли: -e admin_password=...                        │
+# │                                                                         │
+# │  Повторные запуски — та же команда без -k.                              │
+# │  Порт определяется сам: если {{ ssh_port }} открыт — заходим как       │
+# │  admin_user, иначе — как bootstrap_user на 22.                          │
+# │                                                                         │
+# │  Отдельные части: --tags docker / firewall / ssh / ...                  │
+# └─────────────────────────────────────────────────────────────────────────┘
+
+- name: Initial VPN server setup
+  hosts: all
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Check whether SSH is already on port {{ ssh_port }}
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: "{{ ssh_port | int }}"
+        timeout: 5
+      delegate_to: localhost
+      become: false
+      register: ssh_port_probe
+      ignore_errors: true
+      tags: always
+
+    - name: Fall back to bootstrap connection ({{ bootstrap_user }}@22)
+      ansible.builtin.set_fact:
+        ansible_port: 22
+        ansible_user: "{{ bootstrap_user }}"
+      when: ssh_port_probe is failed
+      tags: always
+
+    - name: Gather facts
+      ansible.builtin.setup:
+      tags: always
+
+    - name: Check supported OS
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Ubuntu'
+          - ansible_facts['distribution_major_version'] is version('22', '>=')
+        fail_msg: "Поддерживается только Ubuntu 22.04+"
+      tags: always
+
+  roles:
+    - { role: base, tags: base }
+    - { role: swap, tags: swap }
+    - { role: user, tags: user }
+    - { role: zsh, tags: zsh }
+    - { role: firewall, tags: firewall }
+    - { role: docker, tags: docker }
+    - { role: fail2ban, tags: fail2ban }
+    - { role: ssh, tags: ssh }   # меняет порт и переподключается
+    - { role: panels, tags: panels }
+
+  post_tasks:
+    - name: Check whether reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+      tags: base
+
+    - name: Reboot
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+      when: reboot_if_required and reboot_required.stat.exists
+      tags: base

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from app.schemas.campaign import CampaignRead, MessageOut
 from app.schemas.import_recipients import ImportPreview, ImportResult
+from app.schemas.provision import ProvisionDefaults, ProvisionRunRead
 from app.schemas.recipient import ConfigRead, RecipientRead
 from app.schemas.server import ServerCheck, ServerDeleted, ServerRead
 from app.schemas.suggest import BindSuggestionsResult, SuggestResult
@@ -93,3 +94,15 @@ class BindSuggestionsEnvelope(ApiEnvelope[BindSuggestionsResult]):
 
 class ConfigReadEnvelope(ApiEnvelope[ConfigRead]):
     """Обёртка одного конфига (привязка к клиенту панели)."""
+
+
+class ProvisionDefaultsEnvelope(ApiEnvelope[ProvisionDefaults]):
+    """Обёртка значений для формы поднятия сервера."""
+
+
+class ProvisionRunEnvelope(ApiEnvelope[ProvisionRunRead]):
+    """Обёртка одного прогона плейбука."""
+
+
+class ListProvisionRunEnvelope(ApiEnvelope[list[ProvisionRunRead]]):
+    """Обёртка списка прогонов."""

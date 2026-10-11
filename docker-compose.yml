@@ -21,6 +21,10 @@ services:
       # указывают на рабочую копию.
       DATABASE_URL: sqlite:////data/vibe_mail.db
       VPN_SERVERS_FILE: /app/servers.yml
+      # Сценарии поднятия серверов едут в образ, а логи прогонов — в том: каталог
+      # приложения принадлежит root, и писать в него процесс не может.
+      ANSIBLE_DIR: /app/ansible
+      PROVISION_DIR: /data/provision
 
     volumes:
       # Доступы к панелям — только в контейнер, в образ они не попадают, иначе уехали

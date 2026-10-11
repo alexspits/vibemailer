@@ -1,0 +1,59 @@
+---
+# Если подключены не через ssh_port (первый запуск на 22), sshd временно
+# слушает оба порта. 22 закрывается только после успешного входа на новый порт,
+# так что при закрытом у хостера порте доступ не теряется.
+- name: Detect port migration
+  ansible.builtin.set_fact:
+    ssh_migrating: "{{ ansible_port | int != ssh_port | int }}"
+
+# Port накапливается из всех файлов конфигурации, поэтому из основного его убираем
+- name: Comment out Port in main sshd_config
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^(Port\s+.*)$'
+    replace: '# \1'
+  notify: restart ssh
+
+# Ubuntu 22.10+: при socket activation порт берётся из ssh.socket,
+# а Port в sshd_config без daemon-reload игнорируется. Используем обычный ssh.service.
+- name: Check for ssh.socket
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/ssh.socket
+  register: ssh_socket_unit
+
+- name: Disable ssh.socket
+  ansible.builtin.systemd_service:
+    name: ssh.socket
+    state: stopped
+    enabled: false
+  when: ssh_socket_unit.stat.exists
+  notify: restart ssh
+
+- name: Remove socket activation leftovers
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/ssh.service.d/00-socket.conf
+    - /etc/systemd/system/ssh.socket.d/addresses.conf
+  notify: restart ssh
+
+- name: Enable ssh.service
+  ansible.builtin.systemd_service:
+    name: ssh
+    enabled: true
+
+- name: Configure sshd
+  ansible.builtin.include_tasks: config.yml
+
+- name: Switch to port {{ ssh_port }}
+  ansible.builtin.include_tasks: switch_port.yml
+  when: ssh_migrating
+
+- name: Close bootstrap port 22
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    delete: true
+  when: ssh_port | int != 22

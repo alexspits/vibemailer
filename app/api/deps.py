@@ -4,9 +4,10 @@ from fastapi import Request
 
 from app.db.session import get_db
 from app.services.config_worker import ConfigWorker
+from app.services.provision_runner import ProvisionRunner
 from app.services.worker import Worker
 
-__all__ = ["get_config_worker", "get_db", "get_worker"]
+__all__ = ["get_config_worker", "get_db", "get_provision_runner", "get_worker"]
 
 
 def get_worker(request: Request) -> Worker:
@@ -17,3 +18,8 @@ def get_worker(request: Request) -> Worker:
 def get_config_worker(request: Request) -> ConfigWorker:
     """Воркер генерации конфигов. Нужен ручкам, после которых его пул устарел."""
     return request.app.state.config_worker
+
+
+def get_provision_runner(request: Request) -> ProvisionRunner:
+    """Запускатель плейбуков. Один на приложение: прогоны идут по одному."""
+    return request.app.state.provision_runner

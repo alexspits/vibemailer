@@ -1,0 +1,31 @@
+# {{ ansible_managed }}
+services:
+  amneziawg:
+    image: {{ awg_image }}
+    container_name: amneziawg
+    ports:
+      # UI — только на localhost, доступ через SSH-туннель
+      - "{{ awg_ui_bind }}:{{ awg_ui_port }}:{{ awg_ui_port }}/tcp"
+{% for port in awg_vpn_ports %}
+      - "{{ port }}:{{ port }}/udp"
+{% endfor %}
+    environment:
+      NGINX_PORT: "{{ awg_ui_port }}"
+      NGINX_USER: "{{ awg_ui_user }}"
+      NGINX_PASSWORD: "{{ awg_ui_password }}"
+      AUTO_START_SERVERS: "true"
+      DEFAULT_PORT: "{{ awg_vpn_ports | first }}"
+    volumes:
+      - data:/etc/amnezia
+    # amneziawg-go работает в userspace: SYS_MODULE из примера автора не нужен
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+volumes:
+  data:

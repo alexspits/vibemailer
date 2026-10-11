@@ -1,0 +1,88 @@
+---
+- name: Remove conflicting packages
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-doc
+      - docker-compose
+      - docker-compose-v2
+      - podman-docker
+      - containerd
+      - runc
+    state: absent
+
+# Старый плейбук добавлял репозиторий иначе — два источника с разным
+# Signed-By ломают apt update
+- name: Remove legacy Docker repository files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/docker.list
+    - /usr/share/keyrings/docker-archive-keyring.gpg
+
+- name: Add Docker repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_facts['distribution_release'] }}"
+    components: stable
+    signed_by: https://download.docker.com/linux/ubuntu/gpg
+
+- name: Install Docker
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Configure Docker daemon
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+  notify: restart docker
+
+- name: Enable Docker
+  ansible.builtin.systemd_service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add users to docker group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: docker
+    append: true
+  loop: "{{ docker_users }}"
+
+# ── Docker ↔ UFW ─────────────────────────────────────────────────────────────
+# Опубликованные порты (-p / ports:) Docker пробрасывает через DNAT в цепочку
+# FORWARD, минуя INPUT, где работают правила UFW, — поэтому порт открыт наружу
+# независимо от `ufw deny`. Решение (github.com/chaifeng/ufw-docker):
+# цепочка DOCKER-USER пропускает трафик через ufw-user-forward и режет всё,
+# что пришло снаружи и не разрешено через `ufw route allow`.
+# Контейнеры с network_mode: host не затрагиваются — для них работает
+# обычный `ufw allow`.
+
+- name: Make UFW filter Docker published ports
+  ansible.builtin.blockinfile:
+    path: /etc/ufw/after.rules
+    marker: "# {mark} UFW AND DOCKER"
+    block: "{{ lookup('ansible.builtin.template', 'ufw-docker.rules.j2') }}"
+  notify: reload ufw
+
+- name: Allow routed traffic to containers
+  community.general.ufw:
+    rule: allow
+    route: true
+    proto: "{{ item.proto | default('tcp') }}"
+    from_ip: "{{ item.from | default('any') }}"
+    to_port: "{{ item.port | string }}"
+    comment: "{{ item.comment | default(omit) }}"
+  loop: "{{ ufw_docker_route_rules }}"

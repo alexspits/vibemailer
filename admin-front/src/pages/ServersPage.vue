@@ -28,7 +28,16 @@
           data-test="add-server-button"
           @click="isAddOpen = true"
         >
-          Добавить сервер
+          Подключить готовый
+        </Button>
+
+        <Button
+          :disabled="!canProvision"
+          :title="provisionHint"
+          data-test="provision-server-button"
+          @click="isProvisionOpen = true"
+        >
+          Поднять новый сервер
         </Button>
       </div>
     </div>
@@ -37,6 +46,15 @@
       Панели, с которых берутся конфиги. Выключенный сервер остаётся в списке, но
       в новые рассылки не попадает; уже заведённые конфиги он не теряет.
     </p>
+
+    <ProvisionProgressCard
+      v-if="activeRun"
+      :run="activeRun"
+      :log="runLog"
+      :is-cancelling="isCancelling"
+      @cancel="onCancelRun"
+      @hide="activeRun = null"
+    />
 
     <div :class="$style.tableWrap">
       <Table>
@@ -219,11 +237,17 @@
       v-model:open="isAddOpen"
       @added="load"
     />
+
+    <ProvisionServerDialog
+      v-model:open="isProvisionOpen"
+      :defaults="provisionDefaults ?? null"
+      @started="onRunStarted"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 import { LoaderCircle, Trash } from '@lucide/vue';
 import {
@@ -248,11 +272,18 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import AddServerDialog from '@/components/AddServerDialog.vue';
+import ProvisionProgressCard from '@/components/ProvisionProgressCard.vue';
+import ProvisionServerDialog from '@/components/ProvisionServerDialog.vue';
+import useCancelProvision from '@/composables/data/useCancelProvision';
 import useCheckServer from '@/composables/data/useCheckServer';
 import useDeleteServer from '@/composables/data/useDeleteServer';
+import useGetProvisionDefaults from '@/composables/data/useGetProvisionDefaults';
+import useGetProvisionRun from '@/composables/data/useGetProvisionRun';
+import useGetProvisionRuns from '@/composables/data/useGetProvisionRuns';
 import useGetServers from '@/composables/data/useGetServers';
 import useUpdateServer from '@/composables/data/useUpdateServer';
 import useToast from '@/composables/useToast';
+import type { ProvisionRun } from '@/apiService/provision/provisionApiTypes';
 import type { Server, ServerCheckResult } from '@/apiService/servers/serversApiTypes';
 
 const toast = useToast();
@@ -268,8 +299,17 @@ const {
   onError: onCheckFailed,
 } = useCheckServer();
 
+const {
+  defaults: provisionDefaults,
+  getProvisionDefaults,
+} = useGetProvisionDefaults();
+const { runs: recentRuns, getProvisionRuns, onDone: onRunsLoaded } = useGetProvisionRuns();
+const { run: polledRun, getProvisionRun, onDone: onRunPolled, onError: onPollFailed } = useGetProvisionRun();
+const { isLoading: isCancelling, cancelProvision } = useCancelProvision();
+
 const isInitialLoading = ref(true);
 const isAddOpen = ref(false);
+const isProvisionOpen = ref(false);
 const isDeleteOpen = ref(false);
 const pendingServer = ref<Server | null>(null);
 
@@ -280,6 +320,67 @@ const checkingKey = ref('');
 const queue = ref<string[]>([]);
 
 const serversList = computed(() => servers.value ?? []);
+
+// Прогон плейбука: идёт минутами, поэтому страница следит за ним так же, как за
+// рассылкой, — опросом раз в три секунды.
+const POLL_INTERVAL = 3000;
+let runTimer: number | undefined;
+let runPollInFlight = false;
+
+const activeRun = ref<ProvisionRun | null>(null);
+const runLog = ref('');
+
+const isRunGoing = computed(() => activeRun.value?.status === 'running');
+
+const canProvision = computed(
+  () => Boolean(provisionDefaults.value?.available) && !isRunGoing.value,
+);
+
+const provisionHint = computed(() => {
+  if (isRunGoing.value) {
+    return 'Прогон уже идёт — дождитесь или прервите его';
+  }
+
+  return provisionDefaults.value?.available ? '' : (provisionDefaults.value?.reason ?? '');
+});
+
+function stopRunPolling(): void {
+  if (runTimer !== undefined) {
+    clearInterval(runTimer);
+    runTimer = undefined;
+  }
+}
+
+function pollRunOnce(): void {
+  if (runPollInFlight || !activeRun.value) {
+    return;
+  }
+
+  runPollInFlight = true;
+  // Смещение — то, докуда лог уже прочитан: приедет только новый хвост.
+  getProvisionRun({ id: activeRun.value.id, offset: activeRun.value.offset });
+}
+
+function watchRun(run: ProvisionRun): void {
+  activeRun.value = run;
+  stopRunPolling();
+
+  if (run.status === 'running') {
+    runTimer = setInterval(pollRunOnce, POLL_INTERVAL);
+  }
+}
+
+function onRunStarted(run: ProvisionRun): void {
+  runLog.value = '';
+  watchRun(run);
+  toast.info(`Прогон по ${run.host} запущен — это займёт несколько минут`);
+}
+
+function onCancelRun(): void {
+  if (activeRun.value) {
+    cancelProvision({ id: activeRun.value.id });
+  }
+}
 
 function resultLabel(result: ServerCheckResult): string {
   if (!result.ok) {
@@ -408,7 +509,57 @@ onCheckFailed(() => {
   checkingKey.value = '';
 });
 
-onMounted(load);
+onRunsLoaded(() => {
+  // После перезагрузки страницы прогон продолжается на бэкенде: подхватываем его,
+  // если он всё ещё идёт. Законченные не показываем — это уже история.
+  const latest = recentRuns.value?.[0];
+
+  if (latest && latest.status === 'running' && !activeRun.value) {
+    runLog.value = '';
+    watchRun(latest);
+  }
+});
+
+onRunPolled(() => {
+  runPollInFlight = false;
+  const run = polledRun.value;
+
+  if (!run) {
+    return;
+  }
+
+  runLog.value += run.chunk;
+  activeRun.value = run;
+
+  if (run.status === 'running') {
+    return;
+  }
+
+  stopRunPolling();
+
+  if (run.status === 'done') {
+    toast.success(`Сервер ${run.title} поднят`);
+    // Он мог появиться в servers.yml — список и счётчики надо перечитать.
+    load();
+  } else if (run.status === 'failed') {
+    toast.error(`Прогон по ${run.host} не удался — смотрите лог`);
+  }
+});
+
+onPollFailed(() => {
+  runPollInFlight = false;
+  // Опрос бьёт каждые три секунды, и если отвечать перестала сама программа, тостов
+  // будет по одному на тик.
+  stopRunPolling();
+});
+
+onMounted(() => {
+  load();
+  getProvisionDefaults();
+  getProvisionRuns();
+});
+
+onUnmounted(stopRunPolling);
 </script>
 
 <style module>

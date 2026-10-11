@@ -1,0 +1,28 @@
+---
+- name: Reconnect as {{ admin_user }} on port {{ ssh_port }}
+  ansible.builtin.set_fact:
+    ansible_port: "{{ ssh_port | int }}"
+    ansible_user: "{{ admin_user }}"
+
+- name: Reset connection
+  ansible.builtin.meta: reset_connection
+
+- name: Verify connection on the new port
+  block:
+    - name: Wait for connection
+      ansible.builtin.wait_for_connection:
+        timeout: 30
+  rescue:
+    - name: Abort
+      ansible.builtin.fail:
+        msg: >-
+          Не удалось войти как {{ admin_user }} на порт {{ ssh_port }}.
+          sshd и UFW по-прежнему пропускают порт 22 — проверьте firewall
+          в панели хостера и запустите плейбук снова.
+
+- name: Leave only port {{ ssh_port }}
+  ansible.builtin.set_fact:
+    ssh_migrating: false
+
+- name: Reconfigure sshd
+  ansible.builtin.include_tasks: config.yml

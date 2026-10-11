@@ -1,0 +1,75 @@
+---
+- name: "3x-ui: check existing database"
+  ansible.builtin.stat:
+    path: "{{ panels_dir }}/3x-ui/db/x-ui.db"
+  register: xui_db
+
+- name: "3x-ui: require admin password on first deploy"
+  ansible.builtin.assert:
+    that: xui_admin_password | default('') | length >= 12
+    fail_msg: >-
+      Первая установка 3x-ui: задайте xui_admin_password (не короче 12 символов),
+      иначе панель останется с admin/admin.
+    quiet: true
+  when: not xui_db.stat.exists
+
+- name: "3x-ui: create directories"
+  ansible.builtin.file:
+    path: "{{ panels_dir }}/3x-ui/{{ item }}"
+    state: directory
+    mode: '0700'
+  loop: ['', db, cert]
+
+- name: "3x-ui: write compose file"
+  ansible.builtin.template:
+    src: 3x-ui.compose.yml.j2
+    dest: "{{ panels_dir }}/3x-ui/compose.yml"
+    mode: '0600'
+
+- name: "3x-ui: start"
+  community.docker.docker_compose_v2:
+    project_src: "{{ panels_dir }}/3x-ui"
+    pull: missing
+    remove_orphans: true
+
+# При первом запуске у панели admin/admin, случайного пути нет и она слушает
+# все интерфейсы — выставляем свои значения. Дальше настройки меняются в панели.
+- name: "3x-ui: set initial credentials and listen address"
+  when: not xui_db.stat.exists
+  block:
+    - name: "3x-ui: wait for database"
+      ansible.builtin.wait_for:
+        path: "{{ panels_dir }}/3x-ui/db/x-ui.db"
+        timeout: 60
+
+    - name: "3x-ui: choose web path"
+      ansible.builtin.set_fact:
+        xui_path: "{{ xui_web_base_path or lookup('ansible.builtin.password', '/dev/null', length=16, chars=['ascii_lowercase', 'digits']) }}"
+
+    - name: "3x-ui: apply settings"
+      ansible.builtin.command: >-
+        docker exec 3x-ui /app/x-ui setting
+        -port {{ xui_panel_port }}
+        -listenIP {{ xui_listen_ip }}
+        -webBasePath /{{ xui_path }}/
+        -username {{ xui_admin_user | quote }}
+        -password {{ xui_admin_password | quote }}
+      no_log: true
+
+    - name: "3x-ui: restart to apply settings"
+      ansible.builtin.command: docker restart 3x-ui
+
+    - name: "3x-ui: show panel address"
+      ansible.builtin.debug:
+        msg:
+          - "ssh -N -L {{ xui_panel_port }}:127.0.0.1:{{ xui_panel_port }} -p {{ ssh_port }} {{ admin_user }}@{{ ansible_host | default(inventory_hostname) }}"
+          - "http://localhost:{{ xui_panel_port }}/{{ xui_path }}/  (логин {{ xui_admin_user }})"
+          - "Путь больше нигде не выводится — сохраните его."
+
+- name: "3x-ui: open inbound ports"
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.split('/')[0] }}"
+    proto: "{{ item.split('/')[1] | default('any') }}"
+    comment: 3x-ui inbound
+  loop: "{{ xui_open_ports }}"

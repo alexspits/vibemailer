@@ -1,0 +1,99 @@
+---
+- name: Read active swap
+  ansible.builtin.command: swapon --show=NAME --noheadings
+  register: swap_active
+  changed_when: false
+  check_mode: false
+
+- name: Compute swap size
+  ansible.builtin.set_fact:
+    swap_file_active: "{{ swap_file in swap_active.stdout_lines }}"
+    swap_target_mb: >-
+      {%- if swap_size_mb != 'auto' -%}
+        {{ swap_size_mb | int }}
+      {%- elif swap_active.stdout_lines | reject('eq', swap_file) | list | length > 0 -%}
+        -1
+      {%- elif ansible_facts['memtotal_mb'] < swap_auto_ram_threshold_mb -%}
+        {{ swap_auto_size_mb }}
+      {%- else -%}
+        -1
+      {%- endif -%}
+# -1 — не трогать: swap уже дал хостер или RAM достаточно (только в режиме auto)
+
+- name: Check swap file
+  ansible.builtin.stat:
+    path: "{{ swap_file }}"
+  register: swap_file_stat
+
+- name: Create swap file
+  when:
+    - swap_target_mb | int > 0
+    - not swap_file_stat.stat.exists or swap_file_stat.stat.size != swap_target_mb | int * 1048576
+  block:
+    - name: Disable old swap file
+      ansible.builtin.command: swapoff {{ swap_file }}
+      when: swap_file_active
+
+    # fallocate не везде поддерживается (например, на некоторых ФС) — тогда dd
+    - name: Allocate swap file
+      ansible.builtin.shell: >
+        rm -f {{ swap_file }} &&
+        { fallocate -l {{ swap_target_mb }}M {{ swap_file }}
+        || dd if=/dev/zero of={{ swap_file }} bs=1M count={{ swap_target_mb }}; }
+
+    - name: Set swap file permissions
+      ansible.builtin.file:
+        path: "{{ swap_file }}"
+        mode: '0600'
+        owner: root
+        group: root
+
+    - name: Format swap file
+      ansible.builtin.command: mkswap {{ swap_file }}
+
+    - name: Enable swap file
+      ansible.builtin.command: swapon {{ swap_file }}
+
+- name: Enable swap file
+  ansible.builtin.command: swapon {{ swap_file }}
+  when:
+    - swap_target_mb | int > 0
+    - swap_file_stat.stat.exists
+    - swap_file_stat.stat.size == swap_target_mb | int * 1048576
+    - not swap_file_active
+
+- name: Add swap file to fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^{{ swap_file }}\s'
+    line: "{{ swap_file }} none swap sw 0 0"
+  when: swap_target_mb | int > 0
+
+- name: Tune swappiness
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-swap.conf
+    reload: true
+  loop: "{{ {'vm.swappiness': swap_swappiness, 'vm.vfs_cache_pressure': 50} | dict2items }}"
+  when: swap_target_mb | int > 0
+
+# ── swap_size_mb: 0 — удалить swap-файл ──────────────────────────────────────
+
+- name: Remove swap file
+  when: swap_target_mb | int == 0
+  block:
+    - name: Disable swap file
+      ansible.builtin.command: swapoff {{ swap_file }}
+      when: swap_file_active
+
+    - name: Remove swap file from fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^{{ swap_file }}\s'
+        state: absent
+
+    - name: Delete swap file
+      ansible.builtin.file:
+        path: "{{ swap_file }}"
+        state: absent

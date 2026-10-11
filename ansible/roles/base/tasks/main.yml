@@ -1,0 +1,93 @@
+---
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Upgrade all packages
+  ansible.builtin.apt:
+    upgrade: dist
+    autoremove: true
+  when: base_full_upgrade
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages + ['unattended-upgrades'] }}"
+    state: present
+
+# ── unattended-upgrades: автоматические security-обновления ──────────────────
+
+- name: Enable unattended-upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: '0644'
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+- name: Configure unattended-upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/52unattended-upgrades-local
+    mode: '0644'
+    content: |
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+      Unattended-Upgrade::Automatic-Reboot "{{ unattended_auto_reboot | lower }}";
+      Unattended-Upgrade::Automatic-Reboot-Time "{{ unattended_auto_reboot_time }}";
+
+# По умолчанию обновления ставятся в 6:00–7:00, и назначенная перезагрузка
+# случилась бы только через сутки. Сдвигаем установку на час раньше времени перезагрузки.
+- name: Create apt-daily-upgrade.timer override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/apt-daily-upgrade.timer.d
+    state: directory
+    mode: '0755'
+
+- name: Schedule unattended-upgrades before reboot time
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
+    mode: '0644'
+    content: |
+      [Timer]
+      OnCalendar=
+      OnCalendar=*-*-* {{ '%02d' | format((unattended_auto_reboot_time.split(':')[0] | int - 1) % 24) }}:00
+      RandomizedDelaySec=30m
+  notify: reload systemd
+
+# ── sysctl ────────────────────────────────────────────────────────────────────
+
+- name: Apply sysctl settings
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-vpn-server.conf
+    reload: true
+  loop: "{{ sysctl_settings | dict2items }}"
+  vars:
+    sysctl_settings:
+      # Маршрутизация трафика VPN-клиентов
+      net.ipv4.ip_forward: 1
+      # BBR — заметно лучше пропускная способность для прокси/VPN
+      net.core.default_qdisc: fq
+      net.ipv4.tcp_congestion_control: bbr
+      # Сетевая гигиена
+      net.ipv4.conf.all.accept_redirects: 0
+      net.ipv4.conf.default.accept_redirects: 0
+      net.ipv6.conf.all.accept_redirects: 0
+      net.ipv6.conf.default.accept_redirects: 0
+      net.ipv4.conf.all.send_redirects: 0
+      net.ipv4.conf.default.send_redirects: 0
+      net.ipv4.conf.all.accept_source_route: 0
+      net.ipv6.conf.all.accept_source_route: 0
+      net.ipv4.tcp_syncookies: 1
+      net.ipv4.icmp_echo_ignore_broadcasts: 1
+      # Меньше утечек информации о ядре
+      kernel.dmesg_restrict: 1
+      kernel.kptr_restrict: 2
+      # net.ipv6.conf.all.forwarding не включаем: это отключает приём RA,
+      # и у хостеров со SLAAC пропадает IPv6. Включать осознанно под IPv6-VPN.

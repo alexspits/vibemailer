@@ -484,6 +484,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/provision/defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Provision Defaults
+         * @description Значения для формы и ответ на вопрос, можно ли вообще поднимать серверы.
+         */
+        get: operations["provision_defaults_api_provision_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Runs
+         * @description Последние прогоны, свежие сверху. Лог здесь не отдаём — он у каждого свой.
+         */
+        get: operations["list_runs_api_provision_get"];
+        put?: never;
+        /**
+         * Start Run
+         * @description Запускает плейбук по новому серверу.
+         *
+         *     Доступы для первого входа уезжают в файлы прогона с правами 600 и удаляются вместе
+         *     с ним: в базе и в логе их нет. 409 — если прогон уже идёт: одновременно гоняем один.
+         */
+        post: operations["start_run_api_provision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/provision/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run
+         * @description Состояние прогона и кусок лога после `offset`.
+         *
+         *     Смещение страница присылает то, которое получила в прошлый раз, и дописывает
+         *     пришедшее в конец — иначе лог переливался бы целиком на каждом тике полинга.
+         */
+        get: operations["get_run_api_provision__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/provision/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Run
+         * @description Прерывает прогон. Аварийная кнопка: сервер может остаться недонастроенным.
+         */
+        post: operations["cancel_run_api_provision__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -936,6 +1026,22 @@ export interface components {
             error?: string | null;
         };
         /**
+         * ListProvisionRunEnvelope
+         * @description Обёртка списка прогонов.
+         */
+        ListProvisionRunEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            /** Result */
+            result?: components["schemas"]["ProvisionRunRead"][] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
          * ListRecipientReadEnvelope
          * @description Обёртка списка получателей.
          */
@@ -1023,6 +1129,202 @@ export interface components {
          * @enum {string}
          */
         PanelKind: "amnezia" | "3x-ui" | "wg-easy" | "fake";
+        /**
+         * ProvisionDefaults
+         * @description Что подставить в форму: прочитано из `group_vars/all.yml` самих сценариев.
+         *
+         *     Источник правды один — файл сценариев: что человек поменял у себя в `group_vars`,
+         *     то и предложит форма, а обратно уедет явным значением.
+         */
+        ProvisionDefaults: {
+            /** Available */
+            available: boolean;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Admin User
+             * @default
+             */
+            admin_user: string;
+            /**
+             * Ssh Port
+             * @default 22
+             */
+            ssh_port: number;
+            /**
+             * Bootstrap User
+             * @default root
+             */
+            bootstrap_user: string;
+            /**
+             * Xui Port
+             * @default 2053
+             */
+            xui_port: number;
+            /**
+             * Awg Port
+             * @default 8080
+             */
+            awg_port: number;
+            /** Awg Vpn Ports */
+            awg_vpn_ports?: number[];
+        };
+        /**
+         * ProvisionDefaultsEnvelope
+         * @description Обёртка значений для формы поднятия сервера.
+         */
+        ProvisionDefaultsEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["ProvisionDefaults"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * ProvisionIn
+         * @description Тело запроса на прогон плейбука по новому серверу.
+         */
+        ProvisionIn: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Host */
+            host: string;
+            panel: components["schemas"]["ProvisionPanel"];
+            /** Admin User */
+            admin_user: string;
+            /** Ssh Port */
+            ssh_port: number;
+            /**
+             * Bootstrap User
+             * @default root
+             */
+            bootstrap_user: string;
+            /**
+             * Bootstrap Password
+             * @default
+             */
+            bootstrap_password: string;
+            /**
+             * Admin Password
+             * @default
+             */
+            admin_password: string;
+            /**
+             * Panel Password
+             * @default
+             */
+            panel_password: string;
+            /**
+             * Panel Port
+             * @default 0
+             */
+            panel_port: number;
+            /** Open Ports */
+            open_ports?: string[];
+            /** Vpn Ports */
+            vpn_ports?: number[];
+        };
+        /**
+         * ProvisionPanel
+         * @description Панель, которую ставит плейбук. Значения — те же, что в его `vpn_panels`.
+         * @enum {string}
+         */
+        ProvisionPanel: "3x-ui" | "amneziawg";
+        /**
+         * ProvisionRunEnvelope
+         * @description Обёртка одного прогона плейбука.
+         */
+        ProvisionRunEnvelope: {
+            /**
+             * Status
+             * @default success
+             * @enum {string}
+             */
+            status: "success" | "error";
+            result?: components["schemas"]["ProvisionRunRead"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * ProvisionRunRead
+         * @description Состояние прогона плюс кусок лога после запрошенного смещения.
+         */
+        ProvisionRunRead: {
+            /** Id */
+            id: number;
+            /** Server Key */
+            server_key: string;
+            /** Title */
+            title: string;
+            /** Host */
+            host: string;
+            /** Panel */
+            panel: string;
+            status: components["schemas"]["ProvisionStatus"];
+            /**
+             * Step
+             * @default
+             */
+            step: string;
+            /**
+             * Recap
+             * @default
+             */
+            recap: string;
+            /** Error */
+            error?: string | null;
+            /**
+             * Registered
+             * @default false
+             */
+            registered: boolean;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Chunk
+             * @default
+             */
+            chunk: string;
+            /**
+             * Panel Password
+             * @default
+             */
+            panel_password: string;
+            /**
+             * Tunnel
+             * @default
+             */
+            tunnel: string;
+            /**
+             * Panel Url
+             * @default
+             */
+            panel_url: string;
+        };
+        /**
+         * ProvisionStatus
+         * @enum {string}
+         */
+        ProvisionStatus: "running" | "done" | "failed" | "cancelled";
         /**
          * RecipientCreate
          * @description Тело запроса на добавление одного получателя.
@@ -2379,6 +2681,143 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListPanelClientsEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provision_defaults_api_provision_defaults_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProvisionDefaultsEnvelope"];
+                };
+            };
+        };
+    };
+    list_runs_api_provision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListProvisionRunEnvelope"];
+                };
+            };
+        };
+    };
+    start_run_api_provision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProvisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProvisionRunEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_provision__run_id__get: {
+        parameters: {
+            query?: {
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProvisionRunEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_provision__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProvisionRunEnvelope"];
                 };
             };
             /** @description Validation Error */

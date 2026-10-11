@@ -1,4 +1,4 @@
-"""ORM-модели: Campaign, Recipient, Config."""
+"""ORM-модели: Campaign, Recipient, Config, ProvisionRun."""
 
 import datetime
 import enum
@@ -59,6 +59,47 @@ class ConfigStatus(enum.StrEnum):
     GENERATING = "generating"  # воркер взял в работу
     READY = "ready"
     FAILED = "failed"
+
+
+class ProvisionStatus(enum.StrEnum):
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ProvisionRun(Base):
+    """Прогон плейбука: поднятие нового VPN-сервера с нуля.
+
+    Строка нужна, чтобы прогон переживал перезагрузку страницы: идёт он минутами, и
+    интерфейс должен уметь вернуться к нему, а не начинать заново. Секретов здесь нет —
+    пароли живут в файлах прогона с правами 600 и удаляются по его завершении.
+    """
+
+    __tablename__ = "provision_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # Под каким ключом и названием сервер допишется в servers.yml по успеху прогона.
+    server_key: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    host: Mapped[str] = mapped_column(String(255))
+    # Какую панель ставим: значения из vpn_panels плейбука (3x-ui, amneziawg).
+    panel: Mapped[str] = mapped_column(String(32))
+
+    status: Mapped[ProvisionStatus] = mapped_column(
+        SAEnum(ProvisionStatus), default=ProvisionStatus.RUNNING, index=True
+    )
+    # Последний `TASK [...]` из вывода: по нему видно, на чём прогон стоит.
+    step: Mapped[str] = mapped_column(String(512), default="")
+    # Строка PLAY RECAP по нашему хосту — итог прогона одной строкой.
+    recap: Mapped[str] = mapped_column(String(512), default="")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Удалось ли дописать сервер в servers.yml: прогон мог пройти, а запись упасть.
+    registered: Mapped[bool] = mapped_column(default=False)
+
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Campaign(Base):

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import campaigns, configs, health, recipients, servers
+from app.api import campaigns, configs, health, provision, recipients, servers
 from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.db.base import Base
@@ -23,6 +23,7 @@ from app.db.session import engine
 from app.schemas.envelope import ApiEnvelope
 from app.services.config_worker import ConfigWorker
 from app.services.mail_sender import MailSender
+from app.services.provision_runner import ProvisionRunner
 from app.services.worker import Worker
 
 DEFAULT_CORS_ORIGIN = "http://localhost:5173"
@@ -46,10 +47,16 @@ def _start_workers(app: FastAPI, settings: Settings) -> None:
     app.state.config_worker = ConfigWorker()
     app.state.config_worker.start()
 
+    # Прогоны плейбуков: своего цикла у него нет, старт только закрывает прогоны,
+    # прерванные прошлым процессом.
+    app.state.provision_runner = ProvisionRunner(app.state.config_worker)
+    app.state.provision_runner.start()
+
 
 def _stop_workers(app: FastAPI) -> None:
     app.state.worker.stop()
     app.state.config_worker.stop()
+    app.state.provision_runner.stop()
 
 
 @asynccontextmanager
@@ -107,6 +114,7 @@ app.include_router(campaigns.router)
 app.include_router(recipients.router)
 app.include_router(configs.router)
 app.include_router(servers.router)
+app.include_router(provision.router)
 app.include_router(health.router)
 
 

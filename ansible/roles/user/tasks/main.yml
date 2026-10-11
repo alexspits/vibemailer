@@ -1,0 +1,46 @@
+---
+- name: Check whether {{ admin_user }} exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ admin_user }}"
+    fail_key: false
+
+- name: Create user {{ admin_user }}
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    shell: /bin/zsh
+    groups: sudo
+    append: true
+    create_home: true
+
+# chpasswd хеширует на сервере — на контроллере не нужен passlib
+- name: Set password for {{ admin_user }} (only on creation)
+  ansible.builtin.command:
+    cmd: chpasswd
+    stdin: "{{ admin_user }}:{{ admin_password }}"
+  when:
+    - ansible_facts['getent_passwd'][admin_user] is none
+    - admin_password | default('') | length > 0
+  no_log: true
+
+- name: Add SSH public key
+  ansible.posix.authorized_key:
+    user: "{{ admin_user }}"
+    key: "{{ lookup('file', admin_ssh_public_key_file) }}"
+    state: present
+
+- name: Configure passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/{{ admin_user }}
+    content: "{{ admin_user }} ALL=(ALL) NOPASSWD: ALL\n"
+    mode: '0440'
+    owner: root
+    group: root
+    validate: visudo -cf %s
+  when: admin_sudo_nopasswd
+
+- name: Remove passwordless sudo
+  ansible.builtin.file:
+    path: /etc/sudoers.d/{{ admin_user }}
+    state: absent
+  when: not admin_sudo_nopasswd

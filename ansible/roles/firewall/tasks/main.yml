@@ -1,0 +1,56 @@
+---
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Set default policies
+  community.general.ufw:
+    default: "{{ item.policy }}"
+    direction: "{{ item.direction }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+    - { direction: routed, policy: deny }
+
+# limit: не более 6 подключений за 30 секунд с одного IP
+- name: Rate-limit SSH on port {{ ssh_port }}
+  community.general.ufw:
+    rule: limit
+    port: "{{ ssh_port | string }}"
+    proto: tcp
+    comment: SSH
+
+# Остаток от старых плейбуков: без limit это правило перекрывало бы limit
+- name: Remove plain allow rule for SSH port
+  community.general.ufw:
+    rule: allow
+    port: "{{ ssh_port | string }}"
+    proto: tcp
+    delete: true
+
+# Нужно, пока идёт первичная настройка через 22; роль ssh закроет его в конце
+- name: Temporarily allow port 22
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    comment: SSH bootstrap
+  when: ansible_port | int == 22
+
+- name: Allow service ports
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port | string }}"
+    proto: "{{ item.proto | default('tcp') }}"
+    from_ip: "{{ item.from | default('any') }}"
+    comment: "{{ item.comment | default(omit) }}"
+  loop: "{{ ufw_allow_rules }}"
+
+- name: Set ufw logging
+  community.general.ufw:
+    logging: low
+
+- name: Enable ufw
+  community.general.ufw:
+    state: enabled

@@ -1,0 +1,12 @@
+---
+- name: Check panel names
+  ansible.builtin.assert:
+    that: vpn_panels | difference(['3x-ui', 'amneziawg']) | length == 0
+    fail_msg: "vpn_panels: допустимы только 3x-ui и amneziawg"
+    quiet: true
+
+- name: Deploy panel
+  ansible.builtin.include_tasks: "{{ panel }}.yml"
+  loop: "{{ vpn_panels }}"
+  loop_control:
+    loop_var: panel

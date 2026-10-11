@@ -1,0 +1,114 @@
+---
+# ── Пользователь ──────────────────────────────────────────────────────────────
+
+# Умолчания здесь нейтральные: каталог лежит в публичном репозитории. Приложение
+# подставляет в форму поднятия сервера свои значения (PROVISION_ADMIN_USER и
+# PROVISION_SSH_PORT из .env) и передаёт их прогону явным -e, так что менять файл
+# ради кнопки не нужно — только если гоняете плейбук руками из этого каталога.
+admin_user: admin
+admin_ssh_public_key_file: ~/.ssh/id_ed25519.pub
+admin_sudo_nopasswd: true
+# Пароль нужен только для входа через VNC-консоль хостера (по SSH вход только по ключу).
+# Задаётся лишь при создании пользователя: -e admin_password=... или ansible-vault.
+# admin_password: ""
+
+# ── SSH ───────────────────────────────────────────────────────────────────────
+
+ssh_port: 22
+# Под кем заходить на свежий сервер (порт 22). У некоторых хостеров это ubuntu.
+bootstrap_user: root
+
+ansible_user: "{{ admin_user }}"
+ansible_port: "{{ ssh_port }}"
+ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+
+# ── Система ───────────────────────────────────────────────────────────────────
+
+timezone: Etc/UTC
+
+base_packages:
+  - tmux
+  - mc
+  - vim
+  - zsh
+  - curl
+  - btop
+  - git
+  - ca-certificates
+
+# Полное обновление пакетов при каждом прогоне
+base_full_upgrade: true
+# Перезагрузить в конце прогона, если обновление этого требует
+reboot_if_required: true
+
+# Автоперезагрузка после security-обновлений, которым она нужна (ядро, libc).
+# Время — по timezone сервера; установка обновлений сдвигается на час раньше.
+unattended_auto_reboot: true
+unattended_auto_reboot_time: "00:00"   # по timezone сервера, по умолчанию UTC
+
+# ── Swap ──────────────────────────────────────────────────────────────────────
+
+# auto — создать swap_auto_size_mb, если RAM < swap_auto_ram_threshold_mb
+#        и у хостера нет своего swap; иначе ничего не трогать.
+# Число (МБ) — ровно такой swap-файл. 0 — удалить swap-файл.
+swap_size_mb: auto
+swap_auto_ram_threshold_mb: 2048   # 1–2 ГБ VPS показывают ~960–1990 МБ
+swap_auto_size_mb: 1024
+swap_file: /swapfile
+swap_swappiness: 10
+
+# ── Firewall (UFW) ────────────────────────────────────────────────────────────
+
+# Порты сервисов на хосте: без Docker или в контейнерах с network_mode: host
+# (так обычно запускают 3x-ui). from — ограничить источник, по умолчанию any.
+ufw_allow_rules: []
+#  - { port: 443, proto: tcp, comment: "VLESS Reality" }
+#  - { port: 2053, proto: tcp, comment: "3x-ui panel", from: "1.2.3.4" }
+
+# Порты контейнеров в bridge-сети (секция ports: в compose). Docker обходит
+# обычные правила UFW, поэтому для них нужны правила `ufw route`.
+# Указывается порт ВНУТРИ контейнера (правая часть "host:container").
+ufw_docker_route_rules: []
+#  - { port: 51820, proto: udp, comment: "amnezia-wg-easy VPN" }
+#  - { port: 51821, proto: tcp, comment: "amnezia-wg-easy UI", from: "1.2.3.4" }
+
+# ── fail2ban ──────────────────────────────────────────────────────────────────
+
+fail2ban_ignoreip: []
+fail2ban_bantime: 1h
+fail2ban_findtime: 10m
+fail2ban_maxretry: 5
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+
+docker_users:
+  - "{{ admin_user }}"
+
+# ── VPN-панели ────────────────────────────────────────────────────────────────
+# Какие панели ставить — задаётся для хоста в host_vars/<хост>/vars.yml:
+#   vpn_panels: [3x-ui]          или [amneziawg], или обе.
+# Пароли — в host_vars/<хост>/vault.yml (ansible-vault), см. README.
+# Удаление панели из списка контейнер НЕ удаляет.
+
+vpn_panels: []
+panels_dir: /opt
+
+# 3x-ui (Xray: VLESS Reality и т.д.), network_mode: host
+xui_image: ghcr.io/mhsanaei/3x-ui:v3.8.5
+xui_panel_port: 2053
+xui_listen_ip: 127.0.0.1        # панель только через SSH-туннель
+xui_web_base_path: ""           # пусто — случайный, покажется после установки
+xui_admin_user: admin
+# xui_admin_password: — задаётся только при первой установке
+xui_fail2ban: false             # лимит IP на клиента; даёт контейнеру NET_ADMIN на хосте
+xui_open_ports: []              # inbound-порты из панели: ["443/tcp", "8443"]
+
+# AmneziaWG Web UI, bridge-сеть
+awg_image: alexishw/amneziawg-web-ui:1.9.1
+awg_ui_port: 8080
+awg_ui_bind: 127.0.0.1          # UI только через SSH-туннель
+awg_ui_user: admin
+# awg_ui_password: — обязателен
+# UDP-порты VPN-серверов. Каждый сервер, созданный в UI, должен слушать
+# один из этих портов — иначе он будет недоступен снаружи.
+awg_vpn_ports: [51820]

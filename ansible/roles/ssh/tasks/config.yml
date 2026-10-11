@@ -1,0 +1,17 @@
+---
+- name: Write sshd hardening config
+  ansible.builtin.template:
+    src: 00-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-hardening.conf
+    mode: '0644'
+  vars:
+    ssh_listen_ports: "{{ [22, ssh_port | int] if ssh_migrating else [ssh_port | int] }}"
+  notify: restart ssh
+
+- name: Validate full sshd config
+  ansible.builtin.command: sshd -t
+  changed_when: false
+  check_mode: false
+
+- name: Apply sshd changes
+  ansible.builtin.meta: flush_handlers

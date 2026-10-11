@@ -1,4 +1,4 @@
-.PHONY: install dev run lint format check_servers check_bindings check_smtp remake_db fresh_dev docker_build docker_up docker_down docker_logs
+.PHONY: install ansible_deps dev run lint format check_servers check_bindings check_smtp remake_db fresh_dev docker_build docker_up docker_down docker_logs
 
 PIPENV := pipenv run
 APP := app.main:app
@@ -6,6 +6,12 @@ DB := vibe_mail.db
 
 install:
 	pipenv install
+
+# Коллекции для плейбуков из ansible/ (кнопка «Поднять новый сервер»). В образе их
+# ставит Dockerfile, а для `make dev` нужно один раз сделать это руками: ansible ищет
+# их в ~/.ansible/collections, а не в venv.
+ansible_deps:
+	$(PIPENV) ansible-galaxy collection install -r ansible/requirements.yml
 
 dev:
 	$(PIPENV) uvicorn $(APP) --reload

@@ -1,0 +1,35 @@
+---
+- name: "amneziawg: require UI password"
+  ansible.builtin.assert:
+    that: awg_ui_password | default('') | length >= 12
+    fail_msg: "Задайте awg_ui_password (не короче 12 символов), иначе в UI будет admin/changeme."
+    quiet: true
+
+- name: "amneziawg: create directory"
+  ansible.builtin.file:
+    path: "{{ panels_dir }}/amneziawg"
+    state: directory
+    mode: '0700'
+
+- name: "amneziawg: write compose file"
+  ansible.builtin.template:
+    src: amneziawg.compose.yml.j2
+    dest: "{{ panels_dir }}/amneziawg/compose.yml"
+    mode: '0600'
+  no_log: true
+
+- name: "amneziawg: start"
+  community.docker.docker_compose_v2:
+    project_src: "{{ panels_dir }}/amneziawg"
+    pull: missing
+    remove_orphans: true
+
+# Bridge-сеть: порты контейнера открываются через `ufw route` (см. роль docker)
+- name: "amneziawg: open VPN ports"
+  community.general.ufw:
+    rule: allow
+    route: true
+    proto: udp
+    to_port: "{{ item | string }}"
+    comment: AmneziaWG
+  loop: "{{ awg_vpn_ports }}"

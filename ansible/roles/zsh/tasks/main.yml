@@ -1,0 +1,11 @@
+---
+- name: Install oh-my-zsh for {{ admin_user }}
+  become_user: "{{ admin_user }}"
+  ansible.builtin.shell: |
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+  args:
+    creates: "/home/{{ admin_user }}/.oh-my-zsh"
+  environment:
+    RUNZSH: "no"
+    CHSH: "no"
+    HOME: "/home/{{ admin_user }}"

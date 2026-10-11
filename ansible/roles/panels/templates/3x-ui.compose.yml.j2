@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+services:
+  3x-ui:
+    image: {{ xui_image }}
+    container_name: 3x-ui
+    # host: inbound-порты, созданные в панели, сразу видны снаружи, а доступ
+    # к ним регулирует обычный UFW (xui_open_ports)
+    network_mode: host
+    tty: true
+{% if xui_fail2ban %}
+    # Встроенный fail2ban (лимит IP на клиента) пишет правила iptables хоста
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+{% endif %}
+    environment:
+      XRAY_VMESS_AEAD_FORCED: "false"
+      XUI_ENABLE_FAIL2BAN: "{{ xui_fail2ban | lower }}"
+    volumes:
+      - ./db/:/etc/x-ui/
+      - ./cert/:/root/cert/
+    restart: unless-stopped
