@@ -38,10 +38,16 @@
     - /etc/systemd/system/ssh.socket.d/addresses.conf
   notify: restart ssh
 
-- name: Enable ssh.service
+# started, а не только enabled: на Ubuntu 22.10+ порт до этого слушала socket-активация,
+# которую мы выключили выше, и до хендлера `restart ssh` в конце роли сервер остался бы
+# вообще без SSH. Попутно systemd создаёт /run/sshd (RuntimeDirectory) — без него
+# `sshd -t` в config.yml падает с «Missing privilege separation directory», плейбук
+# обрывается на проверке, хендлер не срабатывает, и сервер остаётся недоступным.
+- name: Enable and start ssh.service
   ansible.builtin.systemd_service:
     name: ssh
     enabled: true
+    state: started
 
 - name: Configure sshd
   ansible.builtin.include_tasks: config.yml
